@@ -16,6 +16,9 @@ var attioManifest []byte
 //go:embed manifests/github.yaml
 var githubManifest []byte
 
+//go:embed manifests/granola.yaml
+var granolaManifest []byte
+
 //go:embed manifests/slack.yaml
 var slackManifest []byte
 
@@ -46,6 +49,11 @@ func NewAttio() *Source {
 // NewGitHub returns a Source backed by the embedded GitHub REST API manifest.
 func NewGitHub() *Source {
 	return newCatalogSource(githubManifest)
+}
+
+// NewGranola returns a Source backed by the embedded Granola REST API manifest.
+func NewGranola() *Source {
+	return newCatalogSource(granolaManifest)
 }
 
 // NewSlack returns a Source backed by the embedded Slack Web API manifest.
