@@ -5,35 +5,37 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 )
 
-// NormalizeAndValidate returns a rule with sorted, unique filters. Supply events.Names() as eventNames.
+// NormalizeAndValidate returns a rule with sorted, unique filters.
 // Destination validation and secret ownership checks belong to the selected channel and API.
-func NormalizeAndValidate(n Notifier, eventNames []string) (Notifier, error) {
-	if _, err := n.NotificationType.Label(); err != nil {
-		return Notifier{}, fmt.Errorf("notifier: %w", err)
+func NormalizeAndValidate(n *ingestionv1.Notifier) (*ingestionv1.Notifier, error) {
+	if n == nil {
+		return nil, fmt.Errorf("notifier: rule is required")
+	}
+	if _, err := NotificationTypeLabel(n.GetNotificationType()); err != nil {
+		return nil, fmt.Errorf("notifier: %w", err)
 	}
 	n.Name = strings.TrimSpace(n.Name)
 	if !utf8.ValidString(n.Name) {
-		return Notifier{}, fmt.Errorf("notifier: name must be valid text")
+		return nil, fmt.Errorf("notifier: name must be valid text")
 	}
 	n.Events = unique(n.Events)
 	if len(n.Events) == 0 {
-		return Notifier{}, fmt.Errorf("notifier: at least one event is required")
+		return nil, fmt.Errorf("notifier: at least one event is required")
 	}
 	if slices.Contains(n.Events, "*") && len(n.Events) != 1 {
-		return Notifier{}, fmt.Errorf("notifier: wildcard cannot be combined with event names")
+		return nil, fmt.Errorf("notifier: wildcard cannot be combined with event names")
 	}
 	for _, name := range n.Events {
-		if name != "*" && (IsLifecycleEvent(name) || !slices.Contains(eventNames, name)) {
-			return Notifier{}, fmt.Errorf("notifier: events must be registered ingestion event names, excluding notifier lifecycle events")
+		if name != "*" && !IsExported(name) {
+			return nil, fmt.Errorf("notifier: events must be exported event names")
 		}
 	}
-	n.Resources = unique(n.Resources)
-	for _, resource := range n.Resources {
-		if resource == "" || !utf8.ValidString(resource) {
-			return Notifier{}, fmt.Errorf("notifier: resource filters must be non-empty valid text")
-		}
+	if len(n.GetResources()) != 0 {
+		return nil, fmt.Errorf("notifier: resource filters are not supported for run events")
 	}
 	return n, nil
 }
@@ -42,14 +44,14 @@ func NormalizeAndValidate(n Notifier, eventNames []string) (Notifier, error) {
 func IsLifecycleEvent(name string) bool { return strings.HasPrefix(name, "notifier.") }
 
 // Matches checks a live, enabled rule against an event name and exact resource name.
-func Matches(n Notifier, eventName, resource string) bool {
-	if !n.IsEnabled || n.DeletedAt != 0 || eventName == "" || IsLifecycleEvent(eventName) {
+func Matches(n *ingestionv1.Notifier, eventName, resource string) bool {
+	if n == nil || !n.GetIsEnabled() || n.GetDeletedAt() != 0 || eventName == "" || IsLifecycleEvent(eventName) {
 		return false
 	}
-	if !slices.Contains(n.Events, "*") && !slices.Contains(n.Events, eventName) {
+	if !slices.Contains(n.GetEvents(), "*") && !slices.Contains(n.GetEvents(), eventName) {
 		return false
 	}
-	return len(n.Resources) == 0 || resource != "" && slices.Contains(n.Resources, resource)
+	return len(n.GetResources()) == 0 || resource != "" && slices.Contains(n.GetResources(), resource)
 }
 
 func unique(values []string) []string {

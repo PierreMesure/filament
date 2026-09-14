@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/galaxy-io/filament/internal/notifier"
@@ -20,11 +21,12 @@ type Sender struct {
 	client *http.Client
 }
 
-// New reuses the client's transport without changing the caller's client.
-// A nil client uses the standard HTTP transport, including TLS verification.
+// New reuses the client's transport without changing the caller's client. A nil
+// client gets the standard transport with a dialer that refuses private and
+// local addresses after resolution, which also closes DNS rebinding.
 func New(client *http.Client) *Sender {
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Transport: guardedTransport()}
 	}
 	clientCopy := *client
 	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
@@ -68,11 +70,7 @@ func (s *Sender) Send(ctx context.Context, n notifier.Notification) (result noti
 		return result
 	}
 	for name, value := range destination.Headers {
-		if name == "Host" {
-			req.Host = value
-		} else {
-			req.Header.Set(name, value)
-		}
+		req.Header.Set(name, value)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Filament-Delivery-ID", n.DeliveryID)
@@ -80,6 +78,10 @@ func (s *Sender) Send(ctx context.Context, n notifier.Notification) (result noti
 	req.Header.Set("X-Filament-Event-Type", n.TriggerType)
 	result.RequestAttempted = true
 	response, err := s.client.Do(req)
+	if errors.Is(err, errPrivateAddress) {
+		result.ErrorCode = notifier.ErrorInvalidConfiguration
+		return result
+	}
 	if err != nil {
 		result.Outcome = transportOutcome(err)
 		result.Retryable = true
@@ -91,7 +93,54 @@ func (s *Sender) Send(ctx context.Context, n notifier.Notification) (result noti
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4*1024))
 	result.StatusCode = response.StatusCode
 	result.Outcome, result.Retryable, result.ErrorCode = statusResult(response.StatusCode)
+	if result.Retryable {
+		result.RetryAfter = retryAfter(response.Header.Get("Retry-After"))
+	}
 	return result
+}
+
+// guardedTransport dials only public addresses, checking every resolved IP.
+func guardedTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		if err != nil {
+			return nil, err
+		}
+		err = errPrivateAddress
+		for _, ip := range ips {
+			if !publicAddr(ip) {
+				continue
+			}
+			var conn net.Conn
+			if conn, err = dialer.DialContext(ctx, network, net.JoinHostPort(ip.Unmap().String(), port)); err == nil {
+				return conn, nil
+			}
+		}
+		return nil, err
+	}
+	return t
+}
+
+// retryAfter reads a Retry-After header as seconds or an HTTP date. Zero when absent or unreadable.
+func retryAfter(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(value); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if at, err := http.ParseTime(value); err == nil {
+		if d := time.Until(at); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 type payload struct {

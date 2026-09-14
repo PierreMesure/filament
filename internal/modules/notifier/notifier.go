@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/galaxy-io/filament"
+	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 	"github.com/galaxy-io/filament/eventbus"
 	"github.com/galaxy-io/filament/eventbus/host"
 	"github.com/galaxy-io/filament/events"
@@ -21,49 +22,61 @@ const (
 	reportTimeout    = 7 * time.Second
 	progressInterval = 10 * time.Second
 	maxConcurrent    = 8
+
+	// Retries double from backoffBase up to backoffCap, so the whole window
+	// for one rule stays under ten minutes.
+	maxAttempts = 10
+	backoffBase = time.Second
+	backoffCap  = 2 * time.Minute
+
+	// maxInFlight is both the unacked cap and the handler worker count per
+	// exported kind, so one slow endpoint holds only its own facts.
+	maxInFlight = 16
 )
 
 // Module matches current pipeline rules and reports delivery attempts.
 type Module struct {
 	ds      filament.DataStore
-	store   notification.Store
 	bus     eventbus.Bus
 	secrets filament.Secrets
 	log     filament.Logger
-	senders map[notification.NotificationType]notification.Sender
+	senders map[ingestionv1.NotificationType]notification.Sender
 }
 
 var _ module.Module = (*Module)(nil)
 
 // New returns an unmounted notifier with its supported senders.
 func New() *Module {
-	return &Module{senders: map[notification.NotificationType]notification.Sender{
-		notification.NotificationWebhook: webhook.New(nil),
+	return &Module{senders: map[ingestionv1.NotificationType]notification.Sender{
+		ingestionv1.NotificationType_NOTIFICATION_TYPE_WEBHOOK: webhook.New(nil),
 	}}
 }
 
 // Name identifies this module.
 func (m *Module) Name() string { return "notifier" }
 
-// Subscriptions declares a live-tail consumer that resumes pending events on restart.
+// Subscriptions declares one live-tail consumer per exported event kind.
 func (m *Module) Subscriptions() []host.Subscription {
-	return []host.Subscription{{
-		Pattern: events.AllPattern(), Durable: "notifier", Replay: false,
-		MaxInFlight: 1, Handler: m.onFact,
-	}}
+	subs := make([]host.Subscription, 0, len(notification.Exported))
+	for _, name := range notification.Exported {
+		d, _ := events.Lookup(name)
+		subs = append(subs, host.Subscription{
+			Pattern: d.Pattern(), Durable: "notifier-" + d.Entity + "-" + d.Event, Replay: false,
+			MaxInFlight: maxInFlight, Handler: m.onFact,
+		})
+	}
+	return subs
 }
 
 // Mount captures the providers this module uses, without starting delivery.
 func (m *Module) Mount(_ context.Context, d module.Deps) error {
-	store, ok := d.DataStore.(notification.Store)
-	if !ok {
-		return errors.New("datastore does not support notifiers")
+	if d.DataStore == nil {
+		return errors.New("notifier requires a datastore")
 	}
 	if d.Bus == nil {
 		return errors.New("notifier requires an event bus")
 	}
 	m.ds = d.DataStore
-	m.store = store
 	m.bus = d.Bus
 	m.secrets = d.Secrets
 	if d.Log != nil {
@@ -79,10 +92,7 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 		m.ignored("decode_failed", msg.Seq())
 		return nil
 	}
-	if notification.IsLifecycleEvent(f.Name) {
-		return nil
-	}
-	if _, ok := events.Lookup(f.Name); !ok || f.Tenant.Valid() != nil || f.Run.Valid() != nil {
+	if _, ok := events.Lookup(f.Name); !ok || !notification.IsExported(f.Name) || f.Tenant.Valid() != nil || f.Run.Valid() != nil {
 		m.ignored("invalid_event", msg.Seq())
 		return nil
 	}
@@ -99,9 +109,9 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 	if err != nil || len(rules) == 0 {
 		return err
 	}
-	frame, err := events.Marshal(f)
+	frame, err := notification.Project(f)
 	if err != nil {
-		return fmt.Errorf("notifier: encode trigger event: %w", err)
+		return err
 	}
 	trigger := notification.Notification{
 		Tenant: f.Tenant, Run: f.Run, Resource: f.Resource,
@@ -111,7 +121,7 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 	return m.deliverAll(ctx, trigger, rules)
 }
 
-func (m *Module) rulesFor(ctx context.Context, f events.Fact) ([]notification.Notifier, filament.RunRequest, error) {
+func (m *Module) rulesFor(ctx context.Context, f events.Fact) ([]*ingestionv1.Notifier, filament.RunRequest, error) {
 	run, err := m.ds.LoadRun(ctx, f.Tenant, f.Run)
 	if errors.Is(err, filament.ErrNotFound) {
 		return nil, filament.RunRequest{}, nil
@@ -132,13 +142,13 @@ func (m *Module) rulesFor(ctx context.Context, f events.Fact) ([]notification.No
 	if pipeline.GetDeletedAt() != 0 {
 		return nil, run.Request, nil
 	}
-	rules, err := m.store.ListNotifiers(ctx, notification.Filter{Tenant: f.Tenant, PipelineID: run.Request.PipelineID})
+	rules, err := m.ds.ListNotifiers(ctx, f.Tenant, run.Request.PipelineID, false)
 	if err != nil {
 		return nil, run.Request, fmt.Errorf("notifier: list pipeline rules: %w", err)
 	}
-	selected := make([]notification.Notifier, 0, len(rules))
+	selected := make([]*ingestionv1.Notifier, 0, len(rules))
 	for _, n := range rules {
-		if n.Tenant != f.Tenant || n.PipelineID != run.Request.PipelineID {
+		if filament.TenantID(n.GetTenantId()) != f.Tenant || n.GetPipelineId() != run.Request.PipelineID {
 			return nil, run.Request, errors.New("notifier: rule does not belong to this pipeline")
 		}
 		if notification.Matches(n, f.Name, f.Resource) {

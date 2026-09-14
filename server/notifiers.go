@@ -10,7 +10,6 @@ import (
 
 	"github.com/galaxy-io/filament"
 	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
-	"github.com/galaxy-io/filament/internal/notifier"
 )
 
 // CreatePipelineNotifier stores the destination as a secret and adds a rule.
@@ -23,7 +22,7 @@ func (a *Server) CreatePipelineNotifier(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	n.ID, n.Tenant, n.PipelineID = uuid.NewString(), tenant, req.Msg.GetPipelineId()
+	n.Id, n.TenantId, n.PipelineId = uuid.NewString(), string(tenant), req.Msg.GetPipelineId()
 	ref, written, err := a.notifierDestination(ctx, n, req.Msg.GetNotifier().GetWebhook())
 	if err != nil {
 		return nil, err
@@ -36,7 +35,7 @@ func (a *Server) CreatePipelineNotifier(ctx context.Context, req *connect.Reques
 		}
 		return nil, notifierStoreError(err)
 	}
-	return connect.NewResponse(&ingestionv1.CreatePipelineNotifierResponse{Notifier: notifierToProto(saved)}), nil
+	return connect.NewResponse(&ingestionv1.CreatePipelineNotifierResponse{Notifier: saved}), nil
 }
 
 // UpdatePipelineNotifier replaces settings at the version the caller last read.
@@ -56,20 +55,20 @@ func (a *Server) UpdatePipelineNotifier(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, notifierStoreError(err)
 	}
-	if stored.DeletedAt != 0 {
+	if stored.GetDeletedAt() != 0 {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("notifier is deleted"))
 	}
-	if stored.Version != req.Msg.GetVersion() {
+	if stored.GetVersion() != req.Msg.GetVersion() {
 		return nil, notifierStoreError(filament.ErrVersionConflict)
 	}
-	if stored.NotificationType != n.NotificationType {
+	if stored.GetNotificationType() != n.GetNotificationType() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notification type cannot change"))
 	}
 	ref, written, err := a.notifierDestination(ctx, stored, req.Msg.GetNotifier().GetWebhook())
 	if err != nil {
 		return nil, err
 	}
-	n.ID, n.Tenant, n.PipelineID, n.Version = stored.ID, tenant, stored.PipelineID, stored.Version
+	n.Id, n.TenantId, n.PipelineId, n.Version = stored.GetId(), string(tenant), stored.GetPipelineId(), stored.GetVersion()
 	n.SecretRefs = map[string]string{"destination": ref}
 	saved, err := store.UpdateNotifier(ctx, n)
 	if err != nil {
@@ -78,10 +77,10 @@ func (a *Server) UpdatePipelineNotifier(ctx context.Context, req *connect.Reques
 		}
 		return nil, notifierStoreError(err)
 	}
-	if old := stored.SecretRefs["destination"]; old != ref {
+	if old := stored.GetSecretRefs()["destination"]; old != ref {
 		a.deleteNotifierSecret(ctx, stored, old)
 	}
-	return connect.NewResponse(&ingestionv1.UpdatePipelineNotifierResponse{Notifier: notifierToProto(saved)}), nil
+	return connect.NewResponse(&ingestionv1.UpdatePipelineNotifierResponse{Notifier: saved}), nil
 }
 
 // ListPipelineNotifiers lists live rules, including disabled ones.
@@ -90,15 +89,11 @@ func (a *Server) ListPipelineNotifiers(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	rules, err := store.ListNotifiers(ctx, notifier.Filter{Tenant: tenant, PipelineID: req.Msg.GetPipelineId()})
+	rules, err := store.ListNotifiers(ctx, tenant, req.Msg.GetPipelineId(), false)
 	if err != nil {
 		return nil, notifierStoreError(err)
 	}
-	out := make([]*ingestionv1.Notifier, 0, len(rules))
-	for _, n := range rules {
-		out = append(out, notifierToProto(n))
-	}
-	return connect.NewResponse(&ingestionv1.ListPipelineNotifiersResponse{Notifiers: out}), nil
+	return connect.NewResponse(&ingestionv1.ListPipelineNotifiersResponse{Notifiers: rules}), nil
 }
 
 // DeletePipelineNotifier soft-deletes a rule, then removes its owned destination.
@@ -114,18 +109,14 @@ func (a *Server) DeletePipelineNotifier(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, notifierStoreError(err)
 	}
-	a.deleteNotifierSecret(ctx, n, n.SecretRefs["destination"])
+	a.deleteNotifierSecret(ctx, n, n.GetSecretRefs()["destination"])
 	return connect.NewResponse(&ingestionv1.DeletePipelineNotifierResponse{}), nil
 }
 
-func (a *Server) notifierPipeline(ctx context.Context, pipelineID string) (notifier.Store, filament.TenantID, error) {
+func (a *Server) notifierPipeline(ctx context.Context, pipelineID string) (filament.DataStore, filament.TenantID, error) {
 	tenant, err := tenantFromContext(ctx)
 	if err != nil {
 		return nil, "", err
-	}
-	store, ok := a.store.(notifier.Store)
-	if !ok {
-		return nil, "", connect.NewError(connect.CodeUnimplemented, fmt.Errorf("datastore does not support notifiers"))
 	}
 	if pipelineID == "" {
 		return nil, "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("pipeline_id is required"))
@@ -137,7 +128,7 @@ func (a *Server) notifierPipeline(ctx context.Context, pipelineID string) (notif
 	if pipeline.GetDeletedAt() != 0 {
 		return nil, "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("pipeline is deleted"))
 	}
-	return store, tenant, nil
+	return a.store, tenant, nil
 }
 
 func notifierStoreError(err error) error {

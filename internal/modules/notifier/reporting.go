@@ -5,6 +5,7 @@ import (
 
 	"github.com/galaxy-io/filament"
 	"github.com/galaxy-io/filament/events"
+	notification "github.com/galaxy-io/filament/internal/notifier"
 )
 
 func (m *Module) report(ctx context.Context, a attempt) {
@@ -26,17 +27,17 @@ func (m *Module) report(ctx context.Context, a attempt) {
 		m.log.Info("notification operation completed",
 			append(fields, filament.Field{Key: "event.name", Value: "notifier.attempt.completed"})...)
 	}
-	_, err := n.NotificationType.Label()
+	kind, err := notification.NotificationTypeLabel(n.NotificationType)
 	if err == nil {
 		err = events.Emit(ctx, m.bus, events.NotifierAttempted, events.Envelope{
 			Tenant: n.Tenant, Run: n.Run, Resource: n.Resource, At: a.completedAt,
 		}, events.NotifierAttemptedEvent{
-			NotifierID: n.NotifierID, NotifierVersion: n.NotifierVersion, NotificationType: n.NotificationType,
+			NotifierID: n.NotifierID, NotifierVersion: n.NotifierVersion, NotificationType: kind,
 			PipelineID: n.PipelineID, PipelineVersionID: n.PipelineVersionID,
 			DeliveryID: n.DeliveryID, AttemptID: n.AttemptID,
-			TriggerType: n.TriggerType, TriggerSubject: n.TriggerSubject, TriggerStreamSequence: n.TriggerStreamSequence,
-			Outcome: r.Outcome, RequestAttempted: r.RequestAttempted, Retryable: r.Retryable,
-			StatusCode: r.StatusCode, DurationMs: r.Duration.Milliseconds(), ErrorCode: r.ErrorCode,
+			TriggerType: n.TriggerType, TriggerStreamSequence: n.TriggerStreamSequence,
+			Outcome: string(r.Outcome), RequestAttempted: r.RequestAttempted, Retryable: r.Retryable,
+			StatusCode: r.StatusCode, DurationMs: r.Duration.Milliseconds(), ErrorCode: string(r.ErrorCode),
 		})
 	}
 	if err != nil && m.log != nil {

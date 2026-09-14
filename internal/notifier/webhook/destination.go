@@ -4,8 +4,10 @@ package webhook
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"strings"
@@ -45,7 +47,7 @@ func NormalizeAndValidateDestination(d Destination) (Destination, error) {
 			return Destination{}, fmt.Errorf("webhook: invalid header name or value")
 		}
 		name = textproto.CanonicalMIMEHeaderKey(name)
-		if name == "Content-Type" || strings.HasPrefix(name, "X-Filament-") {
+		if name == "Host" || name == "Content-Type" || strings.HasPrefix(name, "X-Filament-") {
 			return Destination{}, fmt.Errorf("webhook: header is set by Filament")
 		}
 		if _, exists := headers[name]; exists {
@@ -71,5 +73,19 @@ func validateURL(raw string) error {
 	if u.User != nil || strings.Contains(raw, "#") {
 		return fmt.Errorf("webhook: URL userinfo and fragments are not allowed")
 	}
+	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !publicAddr(ip) {
+		return errPrivateAddress
+	}
 	return nil
+}
+
+// errPrivateAddress marks a destination inside a private or local range.
+var errPrivateAddress = errors.New("webhook: destination resolves to a private or local address")
+
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// publicAddr reports whether ip is routable beyond private and local ranges.
+func publicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsValid() && ip.IsGlobalUnicast() && !ip.IsPrivate() && !cgnat.Contains(ip)
 }

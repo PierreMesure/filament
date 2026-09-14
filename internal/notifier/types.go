@@ -1,88 +1,28 @@
-// Package notifier defines shared notification types and storage contracts.
+// Package notifier contains private notification validation and delivery contracts.
 package notifier
 
 import (
-	"encoding/json"
 	"fmt"
 
-	"github.com/galaxy-io/filament"
+	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 )
 
-// NotificationType selects how a notification is sent.
-type NotificationType int
-
-const (
-	// NotificationUnspecified means no type was selected.
-	NotificationUnspecified NotificationType = 0
-	// NotificationWebhook delivers an event to an HTTP endpoint.
-	NotificationWebhook NotificationType = 1
-)
-
-// Label returns the database/JSON name, or an error for an invalid type.
-func (t NotificationType) Label() (string, error) {
+// NotificationTypeLabel returns the database and wire name for a notification type.
+func NotificationTypeLabel(t ingestionv1.NotificationType) (string, error) {
 	switch t {
-	case NotificationWebhook:
+	case ingestionv1.NotificationType_NOTIFICATION_TYPE_WEBHOOK:
 		return "webhook", nil
 	default:
 		return "", fmt.Errorf("invalid notification type %d", t)
 	}
 }
 
-// ParseNotificationType reads a name such as "webhook", rejecting unknown names.
-func ParseNotificationType(label string) (NotificationType, error) {
+// ParseNotificationType reads a database name such as "webhook".
+func ParseNotificationType(label string) (ingestionv1.NotificationType, error) {
 	switch label {
 	case "webhook":
-		return NotificationWebhook, nil
+		return ingestionv1.NotificationType_NOTIFICATION_TYPE_WEBHOOK, nil
 	default:
-		return NotificationUnspecified, fmt.Errorf("invalid notification type %q", label)
+		return ingestionv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED, fmt.Errorf("invalid notification type %q", label)
 	}
-}
-
-// MarshalJSON writes the type's name as a JSON string.
-func (t NotificationType) MarshalJSON() ([]byte, error) {
-	label, err := t.Label()
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(label)
-}
-
-// UnmarshalJSON reads a type name. Invalid input leaves t unchanged.
-func (t *NotificationType) UnmarshalJSON(data []byte) error {
-	if t == nil {
-		return fmt.Errorf("unmarshal notification type: nil receiver")
-	}
-	var label string
-	if err := json.Unmarshal(data, &label); err != nil {
-		return fmt.Errorf("unmarshal notification type: %w", err)
-	}
-	next, err := ParseNotificationType(label)
-	if err != nil {
-		return err
-	}
-	*t = next
-	return nil
-}
-
-// Notifier defines when and how a pipeline sends notifications.
-// It is stored separately from pipeline graph versions.
-type Notifier struct {
-	ID               string
-	Tenant           filament.TenantID
-	PipelineID       string
-	Name             string
-	NotificationType NotificationType
-	IsEnabled        bool
-	Events           []string          // Event names, or ["*"] for all eligible events.
-	Resources        []string          // Empty matches any resource.
-	Config           map[string]any    // Non-secret settings.
-	SecretRefs       map[string]string // References to stored credentials.
-	Version          int64             // Used to reject stale updates.
-	// Times are Unix milliseconds; DeletedAt is zero until deletion.
-	CreatedAt       int64
-	UpdatedAt       int64
-	DeletedAt       int64
-	CreatedByUserID string
-	UpdatedByUserID string
-	DeletedByUserID string
 }

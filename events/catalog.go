@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/galaxy-io/filament"
-	"github.com/galaxy-io/filament/internal/notifier"
 )
 
 // The catalog: every fact filament emits, with its typed payload. Wire
@@ -125,22 +124,21 @@ type (
 
 	// NotifierAttemptedEvent records an observed notification operation.
 	NotifierAttemptedEvent struct {
-		NotifierID            string                    `json:"notifier_id"`
-		NotifierVersion       int64                     `json:"notifier_version"`
-		NotificationType      notifier.NotificationType `json:"notification_type"`
-		PipelineID            string                    `json:"pipeline_id"`
-		PipelineVersionID     string                    `json:"pipeline_version_id,omitempty"`
-		DeliveryID            string                    `json:"delivery_id"`
-		AttemptID             string                    `json:"attempt_id"`
-		TriggerType           string                    `json:"trigger_type"`
-		TriggerSubject        string                    `json:"trigger_subject"`
-		TriggerStreamSequence uint64                    `json:"trigger_stream_sequence,string"`
-		Outcome               notifier.Outcome          `json:"outcome"`
-		RequestAttempted      bool                      `json:"request_attempted"`
-		Retryable             bool                      `json:"retryable"`
-		StatusCode            int                       `json:"status_code,omitempty"`
-		DurationMs            int64                     `json:"duration_ms"`
-		ErrorCode             notifier.ErrorCode        `json:"error_code,omitempty"`
+		NotifierID            string `json:"notifier_id"`
+		NotifierVersion       int64  `json:"notifier_version"`
+		NotificationType      string `json:"notification_type"`
+		PipelineID            string `json:"pipeline_id"`
+		PipelineVersionID     string `json:"pipeline_version_id,omitempty"`
+		DeliveryID            string `json:"delivery_id"`
+		AttemptID             string `json:"attempt_id"`
+		TriggerType           string `json:"trigger_type"`
+		TriggerStreamSequence uint64 `json:"trigger_stream_sequence,string"`
+		Outcome               string `json:"outcome"`
+		RequestAttempted      bool   `json:"request_attempted"`
+		Retryable             bool   `json:"retryable"`
+		StatusCode            int    `json:"status_code,omitempty"`
+		DurationMs            int64  `json:"duration_ms"`
+		ErrorCode             string `json:"error_code,omitempty"`
 	}
 )
 

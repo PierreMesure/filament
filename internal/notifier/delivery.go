@@ -11,13 +11,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/galaxy-io/filament"
+	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 )
 
 // Notification is the in-memory input to a sender. Config contains resolved secrets.
 type Notification struct {
 	NotifierID            string
 	NotifierVersion       int64
-	NotificationType      NotificationType
+	NotificationType      ingestionv1.NotificationType
 	Tenant                filament.TenantID
 	Run                   filament.RunID
 	Resource              string
@@ -65,6 +66,7 @@ type DeliveryResult struct {
 	StatusCode       int
 	Duration         time.Duration
 	ErrorCode        ErrorCode
+	RetryAfter       time.Duration // Endpoint-requested wait before the next attempt, if any.
 }
 
 // Sender delivers one notification and reports its outcome.
