@@ -15,6 +15,7 @@ const (
 	maxNumericIntegralDigits = 29
 	maxBigNumericScale       = 38
 	maxBigNumericIntegral    = 38
+	maxPrimaryKeyColumns     = 16
 )
 
 var datasetPattern = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -91,19 +92,19 @@ func defineTable(project, dataset, table string, model rowmodel.Schema) (tableDe
 		return tableDefinition{}, fmt.Errorf("schema has no fields")
 	}
 
-	fields := make(map[string]bool, len(model.Fields))
+	fieldTypes := make(map[string]string, len(model.Fields))
 	definitions := make([]string, len(model.Fields))
 	additions := make([]string, len(model.Fields))
 	for i, field := range model.Fields {
 		if field.Name == "" {
 			return tableDefinition{}, fmt.Errorf("schema contains an empty field name")
 		}
-		if fields[field.Name] {
+		if _, exists := fieldTypes[field.Name]; exists {
 			return tableDefinition{}, fmt.Errorf("schema contains duplicate field %q", field.Name)
 		}
-		fields[field.Name] = true
 		identifier := quoteIdent(field.Name)
 		typ := columnType(field)
+		fieldTypes[field.Name] = typ
 		definition := identifier + " " + typ
 		if !field.Nullable {
 			definition += " NOT NULL"
@@ -112,14 +113,21 @@ func defineTable(project, dataset, table string, model rowmodel.Schema) (tableDe
 		additions[i] = "ADD COLUMN IF NOT EXISTS " + identifier + " " + typ
 	}
 
+	if len(model.PrimaryKey) > maxPrimaryKeyColumns {
+		return tableDefinition{}, fmt.Errorf("primary key has %d fields; BigQuery supports at most %d", len(model.PrimaryKey), maxPrimaryKeyColumns)
+	}
 	keys := make([]string, len(model.PrimaryKey))
 	seenKeys := make(map[string]bool, len(model.PrimaryKey))
 	for i, key := range model.PrimaryKey {
-		if !fields[key] {
+		typ, exists := fieldTypes[key]
+		if !exists {
 			return tableDefinition{}, fmt.Errorf("primary-key field %q is absent from schema", key)
 		}
 		if seenKeys[key] {
 			return tableDefinition{}, fmt.Errorf("primary key contains duplicate field %q", key)
+		}
+		if !primaryKeyTypeSupported(typ) {
+			return tableDefinition{}, fmt.Errorf("primary-key field %q maps to unsupported BigQuery key type %s", key, typ)
 		}
 		seenKeys[key] = true
 		keys[i] = quoteIdent(key)
@@ -134,6 +142,16 @@ func defineTable(project, dataset, table string, model rowmodel.Schema) (tableDe
 		createSQL: "CREATE TABLE IF NOT EXISTS " + name + " (\n\t" + strings.Join(definitions, ",\n\t") + "\n)",
 		alterSQL:  "ALTER TABLE " + name + "\n\t" + strings.Join(additions, ",\n\t"),
 	}, nil
+}
+
+func primaryKeyTypeSupported(typ string) bool {
+	base, _, _ := strings.Cut(typ, "(")
+	switch base {
+	case "BIGNUMERIC", "BOOL", "BYTES", "DATE", "DATETIME", "INT64", "NUMERIC", "STRING", "TIMESTAMP":
+		return true
+	default:
+		return false
+	}
 }
 
 func validDataset(dataset string) bool {
