@@ -1,4 +1,4 @@
-package s3
+package gcs
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"github.com/galaxy-io/filament/arrowbatch"
 )
 
-// Write encodes a batch and appends it to the resource's multipart stream.
+// Write encodes a batch and hands it to the resource's resumable stream.
 func (s *Sink) Write(ctx context.Context, batch *arrowbatch.Batch) (filament.WriteReceipt, error) {
 	if batch.Resource == "" {
-		return filament.WriteReceipt{}, fmt.Errorf("s3 sink: resource is required")
+		return filament.WriteReceipt{}, fmt.Errorf("gcs sink: resource is required")
 	}
 	session, bucket, key, err := s.beginApply(batch.Resource)
 	if err != nil {
@@ -23,10 +23,7 @@ func (s *Sink) Write(ctx context.Context, batch *arrowbatch.Batch) (filament.Wri
 	rows := batch.Rows()
 	if batch.NumRows() == 0 {
 		encodedCRC := uint32(0)
-		return filament.WriteReceipt{
-			WriteCRC:   batch.IntegrityCRC(),
-			EncodedCRC: &encodedCRC,
-		}, nil
+		return filament.WriteReceipt{WriteCRC: batch.IntegrityCRC(), EncodedCRC: &encodedCRC}, nil
 	}
 	scratch := session.takeEncodedBuffer()
 	resourceEncoder, err := s.encoderFor(batch.Resource, rows.Schema())
@@ -39,31 +36,31 @@ func (s *Sink) Write(ctx context.Context, batch *arrowbatch.Batch) (filament.Wri
 	encoded, encodedCRC, err := resourceEncoder.encoder.EncodeBatch(scratch, rows)
 	if err != nil {
 		session.releaseEncodedBuffer(scratch)
-		return filament.WriteReceipt{}, fmt.Errorf("s3 sink: encode %s: %w", batch.Resource, err)
+		return filament.WriteReceipt{}, fmt.Errorf("gcs sink: encode %s: %w", batch.Resource, err)
 	}
-	defer session.releaseEncodedBuffer(encoded)
+	encodedBytes := len(encoded)
+	// Append consumes the encoded buffer once it is called. A successful return
+	// means the detached run session owns the upload, as it does for a full S3
+	// multipart part.
 	if err := session.Append(ctx, batch.Resource, key, encoded, batch.NumRows(), encodedCRC); err != nil {
-		return filament.WriteReceipt{}, fmt.Errorf("s3 sink: stream %s: %w", batch.Resource, err)
+		return filament.WriteReceipt{}, fmt.Errorf("gcs sink: stream %s: %w", batch.Resource, err)
 	}
 	resourceEncoder.hasRows = true
 	return filament.WriteReceipt{
-		URI:        fmt.Sprintf("s3://%s/%s", bucket, key),
-		Bytes:      int64(len(encoded)),
-		Rows:       batch.NumRows(),
-		WriteCRC:   batch.IntegrityCRC(),
-		EncodedCRC: &encodedCRC,
+		URI: fmt.Sprintf("gs://%s/%s", bucket, key), Bytes: int64(encodedBytes), Rows: batch.NumRows(),
+		WriteCRC: batch.IntegrityCRC(), EncodedCRC: &encodedCRC,
 	}, nil
 }
 
-func (s *Sink) beginApply(resource string) (*multipartSession, string, string, error) {
+func (s *Sink) beginApply(resource string) (*uploadSession, string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state != stateOpen || s.session == nil {
-		return nil, "", "", fmt.Errorf("s3 sink: write requires an open run")
+		return nil, "", "", fmt.Errorf("gcs sink: write requires an open run")
 	}
 	key, err := s.layout.Object(resource)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("s3 sink: %w", err)
+		return nil, "", "", fmt.Errorf("gcs sink: %w", err)
 	}
 	s.applyWG.Add(1)
 	return s.session, s.bucket, key, nil
@@ -74,23 +71,22 @@ func (s *Sink) Apply(ctx context.Context, batch *arrowbatch.Batch, opts filament
 	switch opts.Policy.Capability.Mode {
 	case filament.WriteAppend, filament.WriteReplace:
 		if err := opts.Policy.ValidateBatch(batch.Resource, batch); err != nil {
-			return filament.WriteReceipt{}, fmt.Errorf("s3 sink: %w", err)
+			return filament.WriteReceipt{}, fmt.Errorf("gcs sink: %w", err)
 		}
 		return s.Write(ctx, batch)
 	default:
-		return filament.WriteReceipt{}, fmt.Errorf("s3 sink: write policy %q is not implemented", opts.Policy.Capability.Mode)
+		return filament.WriteReceipt{}, fmt.Errorf("gcs sink: write policy %q is not implemented", opts.Policy.Capability.Mode)
 	}
 }
 
-// finalizeEncoders appends stream trailers before multipart completion. Parquet
-// writes its file footer here; gzip writes its trailer; NDJSON emits nothing.
-func (s *Sink) finalizeEncoders(ctx context.Context, session *multipartSession) error {
+// finalizeEncoders appends stream trailers before closing resumable writers.
+func (s *Sink) finalizeEncoders(ctx context.Context, session *uploadSession) error {
 	s.mu.Lock()
 	resources := make([]string, 0, len(s.enc))
 	encoders := make(map[string]*resourceEncoder, len(s.enc))
-	for resource, encoder := range s.enc {
+	for resource, resourceEncoder := range s.enc {
 		resources = append(resources, resource)
-		encoders[resource] = encoder
+		encoders[resource] = resourceEncoder
 	}
 	layout := s.layout
 	s.mu.Unlock()
@@ -100,20 +96,29 @@ func (s *Sink) finalizeEncoders(ctx context.Context, session *multipartSession) 
 		resourceEncoder := encoders[resource]
 		resourceEncoder.mu.Lock()
 		buffer := session.takeEncodedBuffer()
-		encoded, crc, err := resourceEncoder.encoder.Finalize(buffer)
-		if err == nil && len(encoded) > 0 && resourceEncoder.hasRows {
-			var key string
-			if key, err = layout.Object(resource); err == nil {
-				err = session.Append(ctx, resource, key, encoded, 0, crc)
-			}
-		}
+		encoded, encodedCRC, err := resourceEncoder.encoder.Finalize(buffer)
 		if err != nil {
 			session.releaseEncodedBuffer(buffer)
 			resourceEncoder.mu.Unlock()
-			return fmt.Errorf("s3 sink: finalize %s: %w", resource, err)
+			return fmt.Errorf("gcs sink: finalize %s: %w", resource, err)
 		}
-		session.releaseEncodedBuffer(encoded)
+		if len(encoded) == 0 || !resourceEncoder.hasRows {
+			session.releaseEncodedBuffer(encoded)
+			resourceEncoder.mu.Unlock()
+			continue
+		}
+		key, err := layout.Object(resource)
+		if err != nil {
+			session.releaseEncodedBuffer(encoded)
+			resourceEncoder.mu.Unlock()
+			return fmt.Errorf("gcs sink: finalize %s: %w", resource, err)
+		}
+		// Append consumes encoded even when the handoff fails.
+		err = session.Append(ctx, resource, key, encoded, 0, encodedCRC)
 		resourceEncoder.mu.Unlock()
+		if err != nil {
+			return fmt.Errorf("gcs sink: finalize %s: %w", resource, err)
+		}
 	}
 	return nil
 }
