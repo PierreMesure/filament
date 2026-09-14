@@ -1,12 +1,12 @@
-package s3
+// Package object contains provider-neutral support for object-store sinks.
+package object
 
 import "hash/crc32"
 
-// combineCRC32C returns the CRC32C of a || b from their individual checksums.
-// This is the GF(2) matrix operation used by zlib's crc32_combine. It lets the
-// object checksum reuse each already-verified batch checksum without scanning
-// the encoded bytes a third time.
-func combineCRC32C(a, b uint32, bLen int64) uint32 {
+// CombineCRC32C returns the CRC32C of a || b from their individual checksums.
+// This is the GF(2) matrix operation used by zlib's crc32_combine. It lets an
+// object checksum reuse the checksums emitted by the streaming encoders.
+func CombineCRC32C(a, b uint32, bLen int64) uint32 {
 	if bLen <= 0 {
 		return a
 	}
