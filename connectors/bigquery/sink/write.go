@@ -87,10 +87,12 @@ func (s *Sink) writeParquet(
 	}
 	encodedCRC = crc32.Checksum(payload, encodedCRCTable)
 	writeCRC := batch.IntegrityCRC()
+	payloadHash := sha256.Sum256(payload)
+	payloadID := fmt.Sprintf("%x", payloadHash)
 
-	stage := batchStage(s.project, s.dataset, table.qualified, s.run, batch.Part, batch.Seq)
+	stage := batchStage(s.project, s.dataset, table.qualified, s.run, batch.Part, batch.Seq, payloadID)
 	s.trackStage(stage)
-	if err := s.loadParquet(ctx, stage, payload, batch.NumRows(), jobID(s.run, table.qualified, "load", batch.Part, batch.Seq)); err != nil {
+	if err := s.loadParquet(ctx, stage, payload, batch.NumRows(), jobID(s.run, table.qualified, "load", batch.Part, batch.Seq, payloadID)); err != nil {
 		return filament.WriteReceipt{}, fmt.Errorf("bigquery sink: load stage for %s seq %d: %w", batch.Resource, batch.Seq, err)
 	}
 	// The stage is deleted after the typed write. Expiration is a fallback for
@@ -104,7 +106,7 @@ func (s *Sink) writeParquet(
 		statement = mergeTableSQL(table, qualified(s.project, s.dataset, stage))
 		phase = "merge"
 	}
-	if _, err := s.runQuery(ctx, statement, jobID(s.run, table.qualified, phase, batch.Part, batch.Seq)); err != nil {
+	if _, err := s.runQuery(ctx, statement, jobID(s.run, table.qualified, phase, batch.Part, batch.Seq, payloadID+"\x00"+statement)); err != nil {
 		return filament.WriteReceipt{}, fmt.Errorf("bigquery sink: %s %s seq %d: %w", phase, batch.Resource, batch.Seq, err)
 	}
 	s.deleteStage(context.WithoutCancel(ctx), stage)
@@ -209,18 +211,20 @@ func (s *Sink) runJob(
 
 func (s *Sink) promoteReplacement(ctx context.Context, table tableDefinition) error {
 	statement := replaceTableSQL(table, qualified(s.project, s.dataset, table.replacement))
-	_, err := s.runQuery(ctx, statement, jobID(s.run, table.qualified, "replace", 0, 0))
+	_, err := s.runQuery(ctx, statement, jobID(s.run, table.qualified, "replace", 0, 0, statement))
 	return err
 }
 
-func batchStage(project, dataset, destination string, run filament.RunID, part int, seq uint64) string {
-	seed := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d\x00%d", project, dataset, destination, run, part, seq)
+func batchStage(project, dataset, destination string, run filament.RunID, part int, seq uint64, payloadID string) string {
+	seed := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%s", project, dataset, destination, run, part, seq, payloadID)
 	hash := sha256.Sum256([]byte(seed))
 	return fmt.Sprintf("_filament_load_%x", hash[:12])
 }
 
-func jobID(run filament.RunID, destination, phase string, part int, seq uint64) string {
-	seed := fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%d", run, destination, phase, part, seq)
+// jobID is stable for an exact retry, including across a resumed execution,
+// but changes when a reused part/sequence carries different data or SQL.
+func jobID(run filament.RunID, destination, phase string, part int, seq uint64, identity string) string {
+	seed := fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%d\x00%s", run, destination, phase, part, seq, identity)
 	hash := sha256.Sum256([]byte(seed))
 	return fmt.Sprintf("filament_%s_%x", phase, hash[:16])
 }
