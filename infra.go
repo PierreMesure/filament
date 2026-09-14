@@ -68,6 +68,24 @@ type DataStore interface {
 	ListPipelineVersions(ctx context.Context, f PipelineVersionFilter) ([]*ingestionv1.PipelineVersion, int, error)
 	ListPipelines(ctx context.Context, f PipelineFilter) ([]*ingestionv1.Pipeline, int, error)
 	DeletePipeline(ctx context.Context, tenant TenantID, id string) error
+
+	// Notifier writes run in a transaction that checks the pipeline still
+	// exists and is not deleted. Updates and deletes require a matching
+	// version or return ErrVersionConflict.
+
+	// CreateNotifier adds a pipeline notification rule at version 1.
+	CreateNotifier(ctx context.Context, n *ingestionv1.Notifier) (*ingestionv1.Notifier, error)
+	// LoadNotifier includes deleted rules. Check DeletedAt before using one.
+	LoadNotifier(ctx context.Context, tenant TenantID, pipelineID, id string) (*ingestionv1.Notifier, error)
+	// ListNotifiers returns matching rules ordered by ID.
+	ListNotifiers(ctx context.Context, tenant TenantID, pipelineID string, includeDeleted bool) ([]*ingestionv1.Notifier, error)
+	// UpdateNotifier updates a rule and increments Version. Its ID, tenant,
+	// pipeline, and type cannot change. Clean up old secrets only after success.
+	UpdateNotifier(ctx context.Context, n *ingestionv1.Notifier) (*ingestionv1.Notifier, error)
+	// DeleteNotifier marks a rule deleted and increments Version. It returns the
+	// saved rule, including secret references for cleanup.
+	DeleteNotifier(ctx context.Context, tenant TenantID, pipelineID, id string, version int64) (*ingestionv1.Notifier, error)
+
 	Name() string
 }
 

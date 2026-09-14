@@ -2,8 +2,10 @@ package notifier
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/galaxy-io/filament"
+	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 	notification "github.com/galaxy-io/filament/internal/notifier"
 )
 
@@ -27,7 +30,7 @@ type attempt struct {
 }
 
 // deliverAll processes every matching rule, with at most eight in flight.
-func (m *Module) deliverAll(ctx context.Context, trigger notification.Notification, rules []notification.Notifier) error {
+func (m *Module) deliverAll(ctx context.Context, trigger notification.Notification, rules []*ingestionv1.Notifier) error {
 	var group errgroup.Group
 	group.SetLimit(maxConcurrent)
 	for _, rule := range rules {
@@ -45,13 +48,19 @@ func (m *Module) deliverAll(ctx context.Context, trigger notification.Notificati
 	return ctx.Err()
 }
 
-// deliverWithRetry makes up to three attempts, then moves on even if delivery failed.
-func (m *Module) deliverWithRetry(ctx context.Context, trigger notification.Notification, rule notification.Notifier) {
-	for _, delay := range []time.Duration{0, time.Second, 2 * time.Second} {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
+// deliverWithRetry retries with exponential backoff up to maxAttempts, then
+// moves on even if delivery failed.
+func (m *Module) deliverWithRetry(ctx context.Context, trigger notification.Notification, rule *ingestionv1.Notifier) {
+	var wait time.Duration
+	for n := 0; n < maxAttempts; n++ {
+		if wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 		}
 		if ctx.Err() != nil {
 			return
@@ -64,17 +73,38 @@ func (m *Module) deliverWithRetry(ctx context.Context, trigger notification.Noti
 		if !a.result.Retryable {
 			return
 		}
+		wait = backoff(n+1, a.result.RetryAfter)
 	}
 }
 
-func (m *Module) deliver(ctx context.Context, trigger notification.Notification, rule notification.Notifier) (out attempt) {
+// backoff returns the delay before retry n: backoffBase doubled per retry with
+// equal jitter, raised to any Retry-After the endpoint asked for, and capped.
+func backoff(n int, retryAfter time.Duration) time.Duration {
+	d := backoffBase << (n - 1)
+	if d > backoffCap || d <= 0 {
+		d = backoffCap
+	}
+	upper := big.NewInt(int64(d/2 + 1))
+	if jitter, err := rand.Int(rand.Reader, upper); err == nil {
+		d = d/2 + time.Duration(jitter.Int64())
+	}
+	if retryAfter > d {
+		d = retryAfter
+	}
+	if d > backoffCap {
+		d = backoffCap
+	}
+	return d
+}
+
+func (m *Module) deliver(ctx context.Context, trigger notification.Notification, rule *ingestionv1.Notifier) (out attempt) {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
 	started := time.Now()
 	out.notification = trigger
-	out.notification.NotifierID = rule.ID
-	out.notification.NotifierVersion = rule.Version
-	out.notification.NotificationType = rule.NotificationType
+	out.notification.NotifierID = rule.GetId()
+	out.notification.NotifierVersion = rule.GetVersion()
+	out.notification.NotificationType = rule.GetNotificationType()
 	out.notification.AttemptID = uuid.NewString()
 	out.result = notification.DeliveryResult{Outcome: notification.OutcomeFailed, Retryable: true}
 	defer func() {
@@ -82,15 +112,15 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 		out.result.Duration = time.Since(started)
 		out.notification.Config = nil
 	}()
-	id, err := notification.DeliveryID(rule.ID, trigger.TriggerSubject, trigger.TriggerStreamSequence)
+	id, err := notification.DeliveryID(rule.GetId(), trigger.TriggerSubject, trigger.TriggerStreamSequence)
 	if err != nil {
 		out.result.ErrorCode = notification.ErrorInternal
 		return out
 	}
 	out.notification.DeliveryID = id
 	rule, config, err := m.resolveDestination(ctx, trigger, rule)
-	out.notification.NotifierVersion = rule.Version
-	out.notification.NotificationType = rule.NotificationType
+	out.notification.NotifierVersion = rule.GetVersion()
+	out.notification.NotificationType = rule.GetNotificationType()
 	if errors.Is(err, errInactiveRule) {
 		out.skipped = true
 		return out
@@ -102,8 +132,8 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 		}
 		return out
 	}
-	sender := m.senders[rule.NotificationType]
-	if _, err := rule.NotificationType.Label(); err != nil || sender == nil {
+	sender := m.senders[rule.GetNotificationType()]
+	if _, err := notification.NotificationTypeLabel(rule.GetNotificationType()); err != nil || sender == nil {
 		out.result.ErrorCode = notification.ErrorInvalidConfiguration
 		return out
 	}
@@ -116,35 +146,36 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 	return out
 }
 
-func (m *Module) resolveDestination(ctx context.Context, trigger notification.Notification, rule notification.Notifier) (notification.Notifier, []byte, error) {
-	ref := rule.SecretRefs["destination"]
+func (m *Module) resolveDestination(ctx context.Context, trigger notification.Notification, rule *ingestionv1.Notifier) (*ingestionv1.Notifier, []byte, error) {
+	ref := rule.GetSecretRefs()["destination"]
 	value, err := m.readDestination(ctx, rule, ref)
 	if !errors.Is(err, filament.ErrNotFound) || !strings.HasPrefix(ref, filament.ConnectionSecretPrefix) {
 		return rule, value, err
 	}
 	// A concurrent update may have replaced and removed the selected secret.
-	current, loadErr := m.store.LoadNotifier(ctx, trigger.Tenant, trigger.PipelineID, rule.ID)
+	current, loadErr := m.ds.LoadNotifier(ctx, trigger.Tenant, trigger.PipelineID, rule.GetId())
 	if errors.Is(loadErr, filament.ErrNotFound) {
 		return rule, nil, errInactiveRule
 	}
 	if loadErr != nil {
 		return rule, nil, fmt.Errorf("reload notifier: %w", loadErr)
 	}
-	if current.Tenant != trigger.Tenant || current.PipelineID != trigger.PipelineID || current.ID != rule.ID {
+	if filament.TenantID(current.GetTenantId()) != trigger.Tenant || current.GetPipelineId() != trigger.PipelineID || current.GetId() != rule.GetId() {
 		return rule, nil, errInvalidConfiguration
 	}
 	if !notification.Matches(current, trigger.TriggerType, trigger.Resource) {
 		return current, nil, errInactiveRule
 	}
-	if current.Version == rule.Version {
+	if current.GetVersion() == rule.GetVersion() {
 		return current, nil, err
 	}
-	value, err = m.readDestination(ctx, current, current.SecretRefs["destination"])
+	value, err = m.readDestination(ctx, current, current.GetSecretRefs()["destination"])
 	return current, value, err
 }
 
-func (m *Module) readDestination(ctx context.Context, rule notification.Notifier, ref string) ([]byte, error) {
-	if ref == "" || filament.ValidateConnectionSecretRef(ref, rule.Tenant) != nil {
+func (m *Module) readDestination(ctx context.Context, rule *ingestionv1.Notifier, ref string) ([]byte, error) {
+	tenant := filament.TenantID(rule.GetTenantId())
+	if ref == "" || filament.ValidateConnectionSecretRef(ref, tenant) != nil {
 		return nil, errInvalidConfiguration
 	}
 	if m.secrets == nil {
@@ -154,7 +185,7 @@ func (m *Module) readDestination(ctx context.Context, rule notification.Notifier
 	if err != nil {
 		return nil, err
 	}
-	if secret.Tenant != "" && secret.Tenant != rule.Tenant {
+	if secret.Tenant != "" && secret.Tenant != tenant {
 		return nil, errInvalidConfiguration
 	}
 	return secret.Value, nil

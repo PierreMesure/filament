@@ -99,10 +99,10 @@ func (b *Bus) Ready(ctx context.Context) error {
 	return nil
 }
 
-// Publish assigns a monotonic sequence, logs the payload for replay, and fans
-// it out to every matching subscription. The subject is split once and reused
-// across candidates. Delivery is synchronous and ordered.
-// Cancellation can leave delivery partial; the record remains available for replay.
+// Publish assigns a monotonic sequence, logs the payload for replay, and queues
+// it for every matching subscription in order. The subject is split once and
+// reused across candidates. Publish never blocks on a slow subscriber and never
+// leaves fan-out partial.
 func (b *Bus) Publish(ctx context.Context, subject string, payload any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -126,9 +126,7 @@ func (b *Bus) Publish(ctx context.Context, subject string, payload any) error {
 	b.mu.Unlock()
 
 	for _, s := range targets {
-		if err := s.deliver(ctx, b.newMessage(rec, s)); err != nil {
-			return err
-		}
+		s.enqueue(b.newMessage(rec, s))
 	}
 	return nil
 }
@@ -179,12 +177,8 @@ func (b *Bus) subscribe(pattern, durable string, fromSeq uint64) (eventbus.Subsc
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
 
-	if len(history) > 0 {
-		go func() {
-			for _, rec := range history {
-				_ = s.deliver(context.Background(), b.newMessage(rec, s))
-			}
-		}()
+	for _, rec := range history {
+		s.enqueue(b.newMessage(rec, s))
 	}
 	return s, nil
 }
@@ -226,13 +220,17 @@ func (b *Bus) remove(s *subscription) {
 }
 
 func (b *Bus) newSubscription(pattern, durable string) *subscription {
-	return &subscription{
+	s := &subscription{
 		bus:     b,
 		pattern: pattern,
 		durable: durable,
 		ch:      make(chan eventbus.Message, b.buffer),
 		done:    make(chan struct{}),
+		drained: make(chan struct{}),
+		wake:    make(chan struct{}, 1),
 	}
+	go s.drain()
+	return s
 }
 
 func (b *Bus) newMessage(rec record, s *subscription) *message {
@@ -247,44 +245,65 @@ type subscription struct {
 	filter  eventbus.Filter // compiled fast-path matcher
 	durable string
 
-	ch   chan eventbus.Message
-	done chan struct{}
+	ch      chan eventbus.Message
+	done    chan struct{}
+	drained chan struct{} // closed when drain exits and ch is closed
 
-	mu       sync.Mutex
-	closed   bool
-	inflight sync.WaitGroup
+	mu     sync.Mutex
+	closed bool
+	queue  []eventbus.Message // pending, in publish order; publishers never block
+	wake   chan struct{}      // signals drain that queue grew
 }
 
 var _ eventbus.Subscription = (*subscription)(nil)
 
 func (s *subscription) C() <-chan eventbus.Message { return s.ch }
 
-// deliver waits for buffer space, cancellation, or subscription closure.
-// Close waits for in-flight senders before closing the channel.
-func (s *subscription) deliver(ctx context.Context, m eventbus.Message) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+// enqueue appends m for drain to hand to the consumer. It never blocks, so a
+// slow subscriber cannot stall a publisher or starve the other subscribers.
+func (s *subscription) enqueue(m eventbus.Message) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return nil
+		return
 	}
-	s.inflight.Add(1)
+	s.queue = append(s.queue, m)
 	s.mu.Unlock()
-	defer s.inflight.Done()
-
 	select {
-	case s.ch <- m:
-	case <-s.done:
-	case <-ctx.Done():
-		return ctx.Err()
+	case s.wake <- struct{}{}:
+	default:
 	}
-	return nil
 }
 
-// Close unsubscribes, unblocks any in-flight deliver, waits for them to drain,
-// then closes the channel so consumers ranging over C() exit cleanly.
+// drain moves queued messages onto ch in order until the subscription closes.
+func (s *subscription) drain() {
+	defer close(s.drained)
+	defer close(s.ch)
+	for {
+		s.mu.Lock()
+		if len(s.queue) == 0 {
+			s.mu.Unlock()
+			select {
+			case <-s.wake:
+				continue
+			case <-s.done:
+				return
+			}
+		}
+		m := s.queue[0]
+		s.queue[0] = nil
+		s.queue = s.queue[1:]
+		s.mu.Unlock()
+		select {
+		case s.ch <- m:
+		case <-s.done:
+			return
+		}
+	}
+}
+
+// Close unsubscribes, stops drain, and waits for the channel to close so
+// consumers ranging over C() exit cleanly.
 func (s *subscription) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -296,8 +315,7 @@ func (s *subscription) Close() error {
 	s.mu.Unlock()
 
 	s.bus.remove(s)
-	s.inflight.Wait()
-	close(s.ch)
+	<-s.drained
 	return nil
 }
 
@@ -330,6 +348,6 @@ func (m *message) Nak() error {
 		return nil
 	}
 	m.tries++
-	go func() { _ = m.sub.deliver(context.Background(), m) }()
+	m.sub.enqueue(m)
 	return nil
 }
