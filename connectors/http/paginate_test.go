@@ -181,6 +181,73 @@ func TestHTTPNoContentIsEmptyButInvalidJSONFails(t *testing.T) {
 	}
 }
 
+func TestHTTPEmptyResponseMatching(t *testing.T) {
+	// The call message was observed on Gong's official developer community:
+	// https://visioneers.gong.io/developers-79/rest-api-fetch-upcoming-calls-in-gong-via-rest-api-1403
+	const emptyBody = `{"requestId":"sanitized","errors":["No calls found corresponding to the provided filters"]}`
+	for _, tc := range []struct {
+		name, body, resource string
+		status               int
+		wantEmpty            bool
+	}{
+		{"calls", emptyBody, "calls", 404, true},
+		{"transcripts", emptyBody, "transcripts", 404, true},
+		{"empty success", `{"calls":[]}`, "calls", 200, true},
+		{"unrelated 404", `{"errors":["Resource not found"]}`, "calls", 404, false},
+		{"additional error", `{"errors":["No calls found corresponding to the provided filters","Permission denied"]}`, "calls", 404, false},
+		{"wrong type", `{"errors":"No calls found corresponding to the provided filters"}`, "calls", 404, false},
+		{"wrong path", `{"message":["No calls found corresponding to the provided filters"]}`, "calls", 404, false},
+		{"invalid JSON", emptyBody + " trailing", "calls", 404, false},
+		{"authentication", emptyBody, "calls", 401, false},
+		{"permissions", emptyBody, "calls", 403, false},
+		{"resource without rule", emptyBody, "users", 404, false},
+		{"scorecards fail closed", emptyBody, "scorecards", 404, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int64
+			src := gongTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			})
+			var sink collectSink
+			err := src.Extract(t.Context(), &sink, filament.ExtractOpts{Resources: []string{tc.resource}})
+			if (err == nil) != tc.wantEmpty || requests.Load() != 1 || len(sink.records) != 0 {
+				t.Fatalf("requests=%d rows=%d error=%v", requests.Load(), len(sink.records), err)
+			}
+		})
+	}
+	// Existing manifests still reject the same response.
+	src := throttleTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, emptyBody)
+	})
+	var sink collectSink
+	if err := src.Extract(t.Context(), &sink, filament.ExtractOpts{Resources: []string{"items"}}); err == nil {
+		t.Fatal("empty response handling leaked to an unconfigured manifest")
+	}
+}
+
+func TestHTTPEmptyResponseEndsPageWalk(t *testing.T) {
+	var requests atomic.Int64
+	src := gongTestSource(t, func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			fmt.Fprint(w, `{"calls":[{"metaData":{"id":"first"}}],"records":{"cursor":"next"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		// A matched error must never project records or follow a cursor.
+		fmt.Fprint(w, `{"errors":["No calls found corresponding to the provided filters"],"calls":[{"metaData":{"id":"wrong"}}],"records":{"cursor":"never"}}`)
+	})
+	var sink collectSink
+	if err := src.Extract(t.Context(), &sink, filament.ExtractOpts{Resources: []string{"calls"}}); err != nil {
+		t.Fatal(err)
+	}
+	if requests.Load() != 2 || len(sink.records) != 1 || sink.records[0].ID != "first" {
+		t.Fatalf("requests=%d rows=%v", requests.Load(), sink.records)
+	}
+}
+
 func TestHTTPPendingResponseCanBeCancelled(t *testing.T) {
 	src := throttleTestSource(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "3600")
