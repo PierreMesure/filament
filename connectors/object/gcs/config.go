@@ -4,23 +4,19 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/galaxy-io/filament"
 	"github.com/galaxy-io/filament/connectors/internal/encoder"
+	object "github.com/galaxy-io/filament/connectors/object/internal"
 )
 
 const (
 	authMethodADC           = "application_default_credentials"
-	defaultPartition        = "dt={{.Date}}"
 	defaultChunkSizeMiB     = 16
 	minChunkSizeMiB         = 1
 	maxChunkSizeMiB         = 1024
 	defaultUploadWorkers    = 4
 	maxUploadWorkers        = 32
-	runsDir                 = "_runs"
-	successMarker           = "_SUCCESS.json"
-	manifestContentType     = "application/json"
 	maxPooledEncodedBuffer  = 4 << 20
 	initialEncodedBufferCap = 64 << 10
 )
@@ -70,11 +66,11 @@ func parseConfig(cfg filament.Config) (sinkConfig, error) {
 	if out.authMethod != authMethodADC {
 		return sinkConfig{}, fmt.Errorf("gcs sink: unsupported auth_method %q", out.authMethod)
 	}
-	partitionText := defaultPartition
+	partitionText := object.DefaultPartition
 	if cfg.Has("partition") {
 		partitionText = strings.Trim(cfg.String("partition"), "/")
 	}
-	if out.partition, err = parsePartition(partitionText); err != nil {
+	if out.partition, err = object.ParsePartition(partitionText); err != nil {
 		return sinkConfig{}, fmt.Errorf("gcs sink: partition: %w", err)
 	}
 	if cfg.Has("chunk_size_mib") {
@@ -92,82 +88,4 @@ func parseConfig(cfg filament.Config) (sinkConfig, error) {
 		out.uploadWorkers = value
 	}
 	return out, nil
-}
-
-type partitionData struct {
-	Resource  string
-	Run       string
-	Date      string
-	StartedAt time.Time
-}
-
-func newPartitionData(resource string, run filament.RunID, startedAt time.Time) partitionData {
-	startedAt = startedAt.UTC()
-	return partitionData{Resource: resource, Run: string(run), Date: startedAt.Format(time.DateOnly), StartedAt: startedAt}
-}
-
-func parsePartition(text string) (*template.Template, error) {
-	tmpl, err := template.New("partition").Option("missingkey=error").Parse(text)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := renderPartition(tmpl, newPartitionData("resource", "run", time.Unix(0, 0))); err != nil {
-		return nil, err
-	}
-	return tmpl, nil
-}
-
-func renderPartition(tmpl *template.Template, data partitionData) (string, error) {
-	var out strings.Builder
-	if err := tmpl.Execute(&out, data); err != nil {
-		return "", err
-	}
-	rendered := out.String()
-	if rendered == "" {
-		return "", nil
-	}
-	for _, segment := range strings.Split(rendered, "/") {
-		switch segment {
-		case "", ".", "..":
-			return "", fmt.Errorf("partition renders invalid path %q", rendered)
-		}
-	}
-	return rendered, nil
-}
-
-type keyLayout struct {
-	prefix    string
-	run       filament.RunID
-	startedAt time.Time
-	partition *template.Template
-	extension string
-}
-
-func newKeyLayout(cfg sinkConfig, run filament.RunSpec) keyLayout {
-	startedAt := run.StartedAt
-	if startedAt.IsZero() {
-		startedAt = time.Now()
-	}
-	options := encoder.Options{FileFormat: cfg.fileFormat, Compression: cfg.compression}
-	return keyLayout{prefix: cfg.prefix, run: run.Run, startedAt: startedAt, partition: cfg.partition, extension: options.Extension()}
-}
-
-func (l keyLayout) object(resource string) (string, error) {
-	partition, err := renderPartition(l.partition, newPartitionData(resource, l.run, l.startedAt))
-	if err != nil {
-		return "", fmt.Errorf("gcs sink: %w", err)
-	}
-	if partition == "" {
-		return l.join(resource, string(l.run)+l.extension), nil
-	}
-	return l.join(resource, partition, string(l.run)+l.extension), nil
-}
-
-func (l keyLayout) success() string { return l.join(runsDir, string(l.run), successMarker) }
-
-func (l keyLayout) join(parts ...string) string {
-	if l.prefix != "" {
-		parts = append([]string{l.prefix}, parts...)
-	}
-	return strings.Join(parts, "/")
 }
