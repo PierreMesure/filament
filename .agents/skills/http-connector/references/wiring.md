@@ -1,91 +1,115 @@
-# Wiring a new connector
+# Catalog wiring and user documentation
 
-Four mechanical steps after the manifest validates. `<name>` is the manifest's `name:` slug.
+Use this after the manifest design is settled. Paths below are relative to the
+repository root. Confirm them against the current tree rather than recreating
+old pages or constructor APIs.
 
-## 1. catalog.go — embed + constructor
+## Manifest metadata and logos
 
-Add to `connectors/http/catalog.go`, matching the existing entries exactly:
+Write `connectors/http/manifests/<name>.yaml`. The manifest owns `name`,
+`display_name`, `description`, `dark_logo_url`, and `light_logo_url`, as well as
+its config schema. Describe the data the connector reads, not the product's
+marketing positioning.
+
+Prefer the existing catalog CDN convention:
+
+```text
+https://cdn.getgalaxy.io/sources/source-icon-<name>-dark.svg
+https://cdn.getgalaxy.io/sources/source-icon-<name>-light.svg
+```
+
+Verify both URLs actually serve SVGs. A plausible filename is not evidence that
+an asset exists. If HEAD is unsupported, check GET. A 403 does not establish
+whether an object is absent or private, but it is not a usable public logo.
+If a CDN asset is unavailable, use a verified official product asset when
+appropriate and report the fallback. Do not invent a working URL or upload
+to the CDN as an implied part of connector creation. If no usable asset is
+available, identify that remaining dependency.
+
+Use the same dark logo URL in the docs frontmatter. When the user later supplies
+CDN assets, update both manifest variants and the docs icon, then check the URLs.
+
+## Embed and register
+
+Add the embed and constructor in `connectors/http/catalog.go`:
 
 ```go
-//go:embed manifests/<name>.yaml
-var <name>Manifest []byte
+//go:embed manifests/example.yaml
+var exampleManifest []byte
 
-// New<Name> returns a Source backed by the embedded <Display> manifest.
-func New<Name>() *Source {
-	return NewManifestWithMetadata("<name>", "<Display>", "<one-sentence product description>.", "<dark-logo-url>", "<light-logo-url>", <name>Manifest, manifestOwnedConfig())
+// NewExample returns a Source backed by the embedded Example manifest.
+func NewExample() *Source {
+    return newCatalogSource(exampleManifest)
 }
 ```
 
-Logo URLs follow `https://cdn.getgalaxy.io/sources/source-icon-<name>-dark.svg` / `-light.svg`. If the CDN asset doesn't exist yet, use the pattern anyway and flag it in the final report.
-
-## 2. register.go — one line
+Add the registration in `connectors/http/register.go`:
 
 ```go
-registry.RegisterSource("<name>", filament.MaturityAlpha, func() filament.Source { return New<Name>() })
+registry.RegisterSource("example", filament.MaturityAlpha, func() filament.Source { return NewExample() })
 ```
 
-Alpha is mandatory by default for a newly authored HTTP connector because its
-behavior was derived from API documentation. Manifest validation and
-`httptest` coverage verify the implementation mechanically, but do not count as
-a live end-to-end run. Only register it as beta or stable when the user
-explicitly directs that promotion based on live validation.
+Match current naming and formatting. `newCatalogSource` calls `NewManifest(data)`.
+Do not use removed metadata constructors or duplicate the config schema in Go.
+Check registry callers if the catalog structure changes. Keep maturity consistent
+between registration, docs, and the source overview.
 
-## 3. Docs
+## Source page
 
-`docs/pages/connectors/sources/<name>.mdx`, modeled on `github.mdx`:
+Create `docs/pages/connectors/sources/<name>.mdx`. Read the nearby source docs,
+especially Granola and Gong, for the current structure:
 
 ```mdx
 ---
-title: "<Display>"
-description: "<what it reads, one sentence>"
-icon: "<dark-logo-url>"
+title: "Example"
+description: "Read records and related data from Example"
+icon: "https://cdn.getgalaxy.io/sources/source-icon-example-dark.svg"
 ---
 ```
 
-Body sections: a lead paragraph noting it is manifest-driven (link to `/pages/connectors/sources/http`), `## Auth` (what the user supplies), `## Resources` (table: resource, path, fans out from; then pagination/quirks prose), `## Modes` (full vs incremental). Plain prose, no marketing.
+Write a short introduction with the supported data, a link to
+`/pages/connectors/building-a-connector/http-manifests`, and accurate maturity
+and live-validation status. Then use these sections:
 
-Then three cross-references, all easy to miss:
+| Section | Information users need |
+|---|---|
+| Configuration | Field / Scope / Default / Description table. Required secrets, credential creation, host or region selection, plans, roles, and access scopes. |
+| Resources | Resource / Endpoint / Parent table. Defaults, optional reads, row meaning, important fields, nested JSON, and meaningful exclusions. |
+| Modes | Which resources support full or incremental reads, exact cursor semantics and limitations, keyless write-mode guidance, and deletion behavior. |
+| Behavior | Pagination, rate limits, parent dependencies, processing or visibility limits, and any special empty/error handling. |
 
-1. A card in the `CardGroup` in `docs/pages/connectors/sources/http.mdx`, alphabetical:
+Scale detail to the connector. A scopes table is useful when resource access
+differs, not mandatory for a one-key API. Describe what the user will receive
+and what they need to configure. Keep parser mechanics and test implementation
+details in the author guide or tests.
 
-```mdx
-<Card title="<Display>" icon="<dark-logo-url>" href="/pages/connectors/sources/<name>" />
-```
+Use plain sentences and concrete nouns. Avoid repeated claims of robustness,
+completeness, or seamless integration. Prefer short sentences to semicolon chains.
+Link official docs near setup instructions and unusual API limitations. Do not
+copy large passages or reproduce the full field reference. State known omissions
+and unavailable live checks without burying setup under a research diary.
 
-2. A nav entry in `docs/docs.json`, alphabetical among the SaaS sources:
+## Documentation cross-references
 
-```json
-"pages/connectors/sources/<name>",
-```
+Update the current locations:
 
-3. A row in the SaaS Apps table in `docs/pages/connectors/sources/overview.mdx`
-   — **and bump the spelled-out connector count**, which appears three times in
-   that file (the "All N run on the same HTTP connector" lead, the Attio row's
-   "deepest parent/child nesting of the N", and the Custom & Testing row's
-   "the N SaaS sources above run on"). Grep the current number first; it moves
-   with every connector added.
+1. `docs/docs.json`: add the source page among the alphabetical SaaS entries.
+2. `docs/pages/connectors/overview/introduction.mdx`: add a source row with the
+   actual maturity and read modes.
+3. `docs/pages/connectors/building-a-connector/http-manifests.mdx`: add the name
+   to the existing manifest-source overview. If shared grammar/runtime behavior
+   changed, document it here too.
 
-## 4. Test in source_test.go
+The former `sources/http.mdx` card list and `sources/overview.mdx` are not the
+current wiring points. Do not restore them or maintain an invented catalog count.
 
-Two patterns, both required:
+## Tests and completion
 
-**Spec + discovery** (model: `TestNewGitHubSpecAndEmbeddedManifest`): construct via `New<Name>()`, assert `Spec().Name`/`DisplayName`, assert each config field's type/required, `Configure` with fake config, `Discover` and assert the exact resource name list.
+Use the public constructor in metadata/discovery tests. For HTTP fixtures,
+`NewManifest(data)` takes the embedded manifest bytes. Set a configurable host
+through fake config, or replace a literal base URL with the mock server URL.
+Keep any higher test request rate local to the fixture.
 
-**Extraction against httptest** (model: the Attio/Slack tests): stub the API, retarget the embedded manifest, extract, assert auth header and records:
-
-```go
-manifestData := []byte(strings.Replace(string(<name>Manifest), "<base_url>", api.URL, 1))
-src := NewManifest("<name>", "<Display>", manifestData, filament.ConfigSchema{})
-```
-
-Cover in the stub: the happy path for at least one resource, one pagination round-trip (first response points at a second page, second terminates), and parent→child fan-out if the manifest uses `for_each`. Use `collectSink` to gather records.
-
-## Verify
-
-```
-go test ./connectors/http/...
-go vet ./connectors/http/...
-go build -o /dev/null ./connectors/http
-```
-
-No commits, no branches — the user runs git themselves.
+Place provider tests with the existing `source_test.go` examples, or use a
+dedicated provider test file when that is easier to maintain. Reuse `collectSink`.
+The required behavior checks and commands are in [validation.md](validation.md).

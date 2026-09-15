@@ -1,84 +1,127 @@
 ---
 name: http-connector
-description: Research an HTTP API and build a fully wired filament connector (manifest + catalog wiring + docs + test). Takes one or more system names as arguments; multiple systems fan out to a swarm. Use when asked to add, build, or generate an HTTP/SaaS source connector.
+description: Research a product's official API documentation and build or update a Filament HTTP source connector, including its manifest, catalog registration, docs, and tests. Use for HTTP/SaaS connector work and manifest-versus-driver assessments.
 ---
 
 # Build an HTTP connector
 
-Arguments are system names, e.g. `/http-connector zendesk` or `/http-connector zendesk hubspot greenhouse`. One system runs inline below. More than one runs the swarm (last section).
+Deliver a connector that reads the agreed data correctly, fits the existing
+HTTP engine, and explains its coverage honestly. Research broadly, then choose
+the simplest implementation that meets the user's scope. A large endpoint list
+does not establish completeness.
 
-Each connector is a YAML manifest plus mechanical wiring. Read `references/grammar-guide.md` before authoring, `references/pitfalls.md` before validating, `references/wiring.md` before wiring. The authoritative grammar is `connectors/http/manifest/grammar.v1.json` and the package doc comment at the top of `connectors/http/manifest/manifest.go`. The five shipped manifests in `connectors/http/manifests/` are worked examples.
+For planning requests, produce the researched design without implementing it.
+For a narrow fix, inspect the affected behavior and update only what is needed.
+For a new connector, follow the workflow below through wiring and verification.
 
-## 1. Eligibility check
+## 1. Inspect the current implementation
 
-Before writing anything, confirm the API is expressible in grammar v1:
+Check the working tree and applicable repository instructions. Read a nearby
+manifest, its tests, and its source docs before deciding how to add the connector.
+Treat current code as authoritative when a reference or code comment is stale:
 
-- REST or GraphQL over HTTP with JSON responses.
-- Auth is one of: none, static bearer token, static header, HTTP basic, or OAuth2 **client credentials**. Authorization-code and refresh-token flows are NOT supported. APIs that only offer user-delegated OAuth fail eligibility.
-- Pagination is one of: cursor (in query, body, or header), offset/limit, page number, `Link` response header, or a full next-page URL in the response. Fully custom schemes fail.
+- `connectors/http/manifest/grammar.v1.json` defines accepted YAML.
+- `connectors/http/manifest/manifest.go`, `validate.go`, and `grammar_enums.go`
+  define decoding, defaults, and semantic constraints.
+- `connectors/http/source.go`, `paginate.go`, and `pagination/` define runtime
+  behavior, connection testing, selection, and recovery.
+- `connectors/http/catalog.go` and `register.go` define catalog wiring.
 
-If ineligible, stop and report exactly which requirement fails and what the API offers instead. Do not force a partial connector.
+Read [grammar-guide.md](references/grammar-guide.md) when authoring a manifest.
+Use [pitfalls.md](references/pitfalls.md) to choose relevant worked examples
+and check data correctness.
 
-## 2. Research
+## 2. Research the product's API before authoring
 
-Use WebSearch/WebFetch against the official API docs. Produce, before authoring:
+**Always consult the company's current official API documentation for a new
+connector.** Open the user's supplied documentation link. Find the API reference,
+authentication guide, pagination and rate-limit rules, relevant endpoint schemas,
+and version or deprecation notes. Do not build from product familiarity, search
+snippets, another provider's manifest, or an SDK's method names alone.
 
-- Base URL, required headers (API version pins, Accept), auth mechanism and what config the user must supply.
-- Rate limits, including dynamic rate-limit response headers if documented.
-- Exact pagination mechanics: request param name and location, response path of the cursor/next link, has-more indicator, max page size.
-- The core system-of-record resources: endpoint paths, HTTP method, response envelope shape (where the records array lives), stable primary key, important typed fields with their JSON paths, parent/child nesting.
-- Incremental candidates: an updated/created timestamp or monotonic cursor, and whether the API accepts a start parameter for it.
-- Error envelope: does the API return errors inside 200 responses (Slack-style `ok: false`)?
+Follow [research.md](references/research.md). Establish the API's full relevant
+read surface, then record a concise coverage matrix with endpoint methods,
+response paths, keys, pagination, access requirements, and read modes. Link the
+sources behind non-obvious decisions. Separate documented behavior, observed
+responses, and assumptions. If documentation is inaccessible, make the missing
+evidence explicit and continue independent work without inventing an API contract.
 
-Prefer fewer resources done correctly over exhaustive coverage. Target the entities that hold record data (tickets, contacts, deals, candidates), not admin/settings endpoints.
+Keep research notes in an existing plan when one exists. Do not create a separate
+research document for every small connector. User docs should contain the setup
+and behavior users need, not the research transcript.
 
-## 3. Author the manifest
+## 3. Decide whether the manifest fits
 
-Write `connectors/http/manifests/<name>.yaml` using the concise syntax described in `references/grammar-guide.md`. Conventions from the shipped manifests:
+Use the current grammar's authentication, request bodies, pagination, projection,
+parent/child reads, and discovery before proposing custom code. REST and GraphQL
+with JSON responses often fit. A POST query can be a read endpoint.
 
-- Every resource gets `primary_key` and a trailing catch-all column: `raw: { path: $, type: json, mode: remainder }`.
-- Shared request settings (method, page-size query, response envelope, pagination) go in `defaults:`; shared field bundles go in `field_sets:`.
-- Secrets are `type: secret` config entries referenced as `config.<key>` in auth.
-- Declare `incremental:` when the API supports a start parameter for a cursor field.
-- End with `discovery: { mode: static }` unless the API has selectable containers (channels, databases, repos) worth surfacing individually.
+Supported auth includes static bearer/header credentials, HTTP Basic, and OAuth2
+client credentials. The engine does not implement delegated authorization-code
+or refresh-token flows. A documented personal or service token can still be a
+valid alternative. Do not present a short-lived token as unattended OAuth support.
 
-## 4. Validate
+Separate the decisions:
 
-Loop until clean:
+- **Manifest:** the agreed reads fit existing primitives.
+- **Small shared fix:** a concrete correctness gap needs a narrow change that
+  preserves existing behavior, such as lossless numeric decoding or an opt-in
+  response rule. Explain the need and test the shared path.
+- **Driver or revised scope:** essential behavior requires orchestration the
+  manifest cannot express, such as runtime property discovery, multi-stage
+  hydration, search-limit partitioning, or token lifecycle management.
 
-```
-go test ./connectors/http -run TestManifests
-```
+Do not silently drop a promised core resource to make eligibility pass. Do not
+turn a connector task into a new framework, scheduler, or configuration surface.
+Honor an explicit manifest-only constraint and identify the precise blocker
+when required behavior cannot fit it. If a driver comparison is requested,
+inspect the referenced implementation or branch without switching checkouts.
 
-The failure output aggregates every grammar and semantic error with its YAML path. Fix all of them, not just the first.
+## 4. Design and implement the resource set
 
-## 5. Wire
+Include the core records and supporting reference data needed to interpret them.
+Classify meaningful API families as included, optional, or excluded with reasons.
+Choose useful defaults. Extra permissions, expensive reads, audit APIs, or separate
+product families often belong behind resource selection or outside the initial
+scope. Do not exclude useful reference tables merely because they live under
+a settings endpoint.
 
-Follow `references/wiring.md` exactly: embed + constructor in `connectors/http/catalog.go`, registration line in `connectors/http/register.go`, docs page `docs/pages/connectors/sources/<name>.mdx` plus a card in `http.mdx`, and an httptest-backed test in `connectors/http/source_test.go`.
+Use existing bulk endpoints before adding per-record requests. Give each resource
+an explicit row meaning, a valid key policy, and a trailing `raw` remainder.
+Preserve nested data as JSON when splitting it would add speculative tables or
+lose relationships. Use `primary_key: []` when no stable key exists and document
+the appropriate write mode. Never invent uniqueness to satisfy a convention.
 
-Register every new HTTP connector with `filament.MaturityAlpha`. These
-connectors are authored from documentation, so manifest validation and mocked
-HTTP tests do not establish end-to-end behavior against the live API. Only use
-beta or stable when the user explicitly provides a different maturity based on
-live validation.
+Only declare incremental reads after verifying the upstream filter and watermark
+semantics. An event date is not an update timestamp. Full reads are the correct
+choice when a date cursor would miss edits or late processing.
 
-## 6. Verify
+Write the manifest, validate it, then follow [wiring.md](references/wiring.md) for
+catalog registration, logos, and the Configuration / Resources / Modes / Behavior
+docs pattern. Use direct, human prose. Avoid marketing, filler, and semicolon-heavy
+sentences.
 
-```
-go test ./connectors/http/...
-go vet ./connectors/http/...
-go build -o /dev/null ./connectors/http
-```
+## 5. Verify and report the actual result
 
-Never leave a compiled binary in the tree. Never commit or branch — the user runs git themselves. Finish by reporting per-system: resources covered, auth/pagination choices, incremental support, maturity (alpha by default), and anything that needs a live-credential smoke test.
+Follow [validation.md](references/validation.md) for mock coverage, shared-runtime
+regressions, docs checks, and live smoke tests. Tests must demonstrate requests
+and data behavior, not merely repeat the YAML. Fix failures in the changed scope
+and distinguish unrelated existing failures.
 
-## Swarm mode (2+ systems)
+New connectors start at `filament.MaturityAlpha`. Grammar validation and mocked
+responses do not establish live fidelity. Promote maturity only when the user
+directs it based on live validation. If credentials or account features are
+unavailable, finish the implementation and state exactly which live checks remain.
 
-Orchestrate with the Workflow tool. Stages, pipelined per system with no cross-system barrier:
+Finish with resources covered, auth and pagination choices, read modes, checks
+run, and material limitations. Avoid promises of perfection or future-proofing.
+Leave commits and branch creation to the user unless explicitly requested.
 
-1. **Research** — one agent per system executes step 2 and returns a structured spec (auth, pagination, rate limits, resource list with paths/keys/fields, incremental candidates, eligibility verdict). Ineligible systems drop out with the reason; they still appear in the final report.
-2. **Author + validate** — one agent per system executes steps 3–4 and writes only files that system exclusively owns: its manifest, its docs page, its test functions. It must NOT touch `catalog.go`, `register.go`, or `http.mdx`. No worktree isolation needed because owned files never overlap.
-3. **Review** — one adversarial agent per manifest re-checks the manifest against the API docs: pagination param names and response paths exact, field types match documented payloads, primary key actually unique, incremental comparator correct. Findings go back to the author agent (or get fixed directly) before the final stage.
-4. **Finalize** — a single agent, after all systems land, edits the shared files once (`catalog.go`, `register.go`, `http.mdx` cards), registers each new connector with `filament.MaturityAlpha`, runs the full step-6 verification, and emits the per-system report.
+## Multiple products
 
-Each subagent prompt must point at this skill directory so the agent reads the same references.
+Apply the same research and validation to each product. When parallel agent work
+is authorized and tools are available, give each agent one product's research,
+manifest, docs page, and dedicated test file. Keep shared catalog, navigation,
+and runtime edits with one coordinator. Review each product's evidence before
+final integration. Otherwise work sequentially. Use the tools available in the
+active environment.
