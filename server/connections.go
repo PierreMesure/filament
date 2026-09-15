@@ -322,8 +322,6 @@ func extractSecretFields(schema []filament.ConfigField, cfg map[string]any, pare
 				continue
 			}
 			if field.Type == filament.FieldObject {
-				// An object secret is stored as its JSON. An empty object is
-				// reported with a blank value so the caller can clear the field.
 				object, ok := value.(map[string]any)
 				if !ok {
 					return nil, fmt.Errorf("secret field %q must be an object", path)
