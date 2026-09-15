@@ -15,6 +15,7 @@ import {
 
 import { isNameValid } from "@/pages/connectors/components/form/validation";
 import {
+  PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION,
   PIPELINE_NOTIFIER_DEFAULT_STATE,
   PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY,
   PIPELINE_NOTIFIER_EVENT_ALL,
@@ -44,6 +45,9 @@ export const formatPipelineNotifierEventsSelection = (
 ): string => {
   if (selectedOptions.length === 0) return placeholder;
   if (selectedOptions.length === 1) return selectedOptions[0].label;
+  if (selectedOptions.length === PIPELINE_NOTIFIER_EVENTS.length) {
+    return PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION.label;
+  }
   return pluralize("event", selectedOptions.length, true);
 };
 

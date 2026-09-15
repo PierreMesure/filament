@@ -12,10 +12,12 @@ import TextInput from "@galaxy-io/dls/inputs/TextInput";
 import Text, { TextSize, TextVariant } from "@galaxy-io/dls/text/Text";
 
 import {
+  PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION,
   PIPELINE_NOTIFIER_EVENT_OPTIONS,
+  PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT,
   PIPELINE_NOTIFIER_HEADERS_PLACEHOLDER_TEXT,
   PIPELINE_NOTIFIER_INPUT_WIDTH,
-  PIPELINE_NOTIFIER_KEEP_PLACEHOLDER_TEXT,
+  PIPELINE_NOTIFIER_URL_KEEP_PLACEHOLDER_TEXT,
 } from "@/pages/pipelines/components/notifier/constants";
 import type {
   PipelineNotifierEvent,
@@ -47,10 +49,10 @@ const PipelineNotifierFields = ({
       ? "Use a JSON object with string values"
       : undefined;
   const urlPlaceholder = state.hasStoredDestination
-    ? PIPELINE_NOTIFIER_KEEP_PLACEHOLDER_TEXT
+    ? PIPELINE_NOTIFIER_URL_KEEP_PLACEHOLDER_TEXT
     : "https://example.com/hooks/filament";
   const headersPlaceholder = state.hasStoredDestination
-    ? PIPELINE_NOTIFIER_KEEP_PLACEHOLDER_TEXT
+    ? PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT
     : PIPELINE_NOTIFIER_HEADERS_PLACEHOLDER_TEXT;
   const selectedEventOptions = PIPELINE_NOTIFIER_EVENT_OPTIONS.filter((option) =>
     state.events.includes(option.value as PipelineNotifierEvent),
@@ -83,7 +85,7 @@ const PipelineNotifierFields = ({
         <TextInput
           value={state.name}
           onChange={handleNameChange}
-          placeholder="Notify on-call"
+          placeholder="Webhook name"
           size={InputSize.LARGE}
           width={PIPELINE_NOTIFIER_INPUT_WIDTH}
           isDisabled={isDisabled}
@@ -100,6 +102,7 @@ const PipelineNotifierFields = ({
           value={selectedEventOptions}
           onChange={handleEventsChange}
           renderSelectedText={formatPipelineNotifierEventsSelection}
+          pinnedOptions={[PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION]}
           placeholder="Select events"
           size={InputSize.LARGE}
           width={PIPELINE_NOTIFIER_INPUT_WIDTH}

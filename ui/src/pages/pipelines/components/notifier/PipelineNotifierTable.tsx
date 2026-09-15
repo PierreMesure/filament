@@ -136,7 +136,7 @@ const PipelineNotifierTable = ({
           />
           <FlexItem shrink={0}>
             <Button
-              label="Add rule"
+              label="Add notifier"
               icon={PlusIcon}
               variant={ButtonVariant.SECONDARY}
               onClick={() => handleCreatingChange(true)}
@@ -165,10 +165,10 @@ const PipelineNotifierTable = ({
           contentWhenEmpty={
             <EmptyLayout
               size={EmptyLayoutSize.SMALL}
-              header={rows.length === 0 ? "No notification rules" : undefined}
+              header={rows.length === 0 ? "No notifiers" : undefined}
               message={
                 rows.length === 0
-                  ? "Add a rule to get notified when runs complete or fail."
+                  ? "Add a notifier to get notified when runs complete or fail."
                   : "No rules match your search."
               }
             />
