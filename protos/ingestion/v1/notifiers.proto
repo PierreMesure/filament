@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package ingestion.v1;
 
+import "google/protobuf/struct.proto";
+
 // NotificationType identifies how a pipeline notification is delivered.
 // Unspecified is an input sentinel and cannot be persisted.
 enum NotificationType {
@@ -9,7 +11,20 @@ enum NotificationType {
   NOTIFICATION_TYPE_WEBHOOK = 1;
 }
 
-// Notifier contains settings and secret references, never destination values.
+// NotifierEvent identifies an event kind a notifier can deliver. Unspecified is
+// an input sentinel and cannot be persisted.
+enum NotifierEvent {
+  NOTIFIER_EVENT_UNSPECIFIED = 0;
+  NOTIFIER_EVENT_RUN_STARTED = 1;
+  NOTIFIER_EVENT_RUN_COMPLETED = 2;
+  NOTIFIER_EVENT_RUN_FAILED = 3;
+  NOTIFIER_EVENT_RUN_PARTIAL = 4;
+  NOTIFIER_EVENT_RUN_CANCELED = 5;
+  NOTIFIER_EVENT_RUN_PAUSED = 6;
+}
+
+// Notifier holds settings, plain config, and secret references, never secret
+// values. Webhook config carries url; secret_refs carries headers.
 message Notifier {
   string id = 1;
   string tenant_id = 2;
@@ -17,10 +32,10 @@ message Notifier {
   string name = 4;
   NotificationType notification_type = 5;
   bool is_enabled = 6;
-  repeated string events = 7;
+  repeated NotifierEvent events = 7;
   repeated string resources = 8;
-  map<string, string> secret_refs = 9;
-  int64 version = 10;
+  google.protobuf.Struct config = 9;
+  map<string, string> secret_refs = 10;
   int64 created_at = 11;
   int64 updated_at = 12;
   int64 deleted_at = 13;
@@ -29,30 +44,17 @@ message Notifier {
   string deleted_by_user_id = 16;
 }
 
-// NotifierInput replaces the rule's settings. An omitted destination on update
-// keeps the existing secret reference.
+// NotifierInput replaces the rule's settings. Secret fields in config are
+// extracted and stored as secrets; on update, an omitted secret field keeps
+// the reference echoed in secret_refs.
 message NotifierInput {
   string name = 1;
   NotificationType notification_type = 2;
   bool is_enabled = 3;
-  repeated string events = 4; // Registered event names, or ["*"].
+  repeated NotifierEvent events = 4;
   repeated string resources = 5; // Empty matches any resource.
-  oneof channel {
-    WebhookNotifierInput webhook = 6;
-  }
-}
-
-message WebhookNotifierInput {
-  oneof destination_source {
-    WebhookNotifierDestination destination = 1;
-    string destination_secret_ref = 2;
-  }
-}
-
-// WebhookNotifierDestination is stored as a single secret and is never returned.
-message WebhookNotifierDestination {
-  string url = 1;
-  map<string, string> headers = 2;
+  google.protobuf.Struct config = 6;
+  map<string, string> secret_refs = 7;
 }
 
 message CreatePipelineNotifierRequest {
@@ -67,8 +69,7 @@ message CreatePipelineNotifierResponse {
 message UpdatePipelineNotifierRequest {
   string pipeline_id = 1;
   string notifier_id = 2;
-  int64 version = 3;
-  NotifierInput notifier = 4;
+  NotifierInput notifier = 3;
 }
 
 message UpdatePipelineNotifierResponse {
@@ -86,7 +87,6 @@ message ListPipelineNotifiersResponse {
 message DeletePipelineNotifierRequest {
   string pipeline_id = 1;
   string notifier_id = 2;
-  int64 version = 3;
 }
 
 message DeletePipelineNotifierResponse {}

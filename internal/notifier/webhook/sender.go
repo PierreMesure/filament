@@ -47,13 +47,11 @@ func (s *Sender) Send(ctx context.Context, n notifier.Notification) (result noti
 	}
 	destination, err := ParseDestination(n.Config)
 	if err != nil {
-		result.Retryable = true
 		result.ErrorCode = notifier.ErrorInvalidConfiguration
 		return result
 	}
 	body, err := json.Marshal(payload{
-		SchemaVersion: "1", NotifierID: n.NotifierID, NotifierVersion: n.NotifierVersion,
-		DeliveryID: n.DeliveryID, PipelineID: n.PipelineID, PipelineVersionID: n.PipelineVersionID,
+		SchemaVersion: "1", NotifierID: n.NotifierID, DeliveryID: n.DeliveryID, PipelineID: n.PipelineID, PipelineVersionID: n.PipelineVersionID,
 		TriggerStreamSequence: n.TriggerStreamSequence, Event: n.Event,
 	})
 	if err != nil {
@@ -146,7 +144,6 @@ func retryAfter(value string) time.Duration {
 type payload struct {
 	SchemaVersion         string          `json:"schema_version"`
 	NotifierID            string          `json:"notifier_id"`
-	NotifierVersion       int64           `json:"notifier_version"`
 	DeliveryID            string          `json:"delivery_id"`
 	PipelineID            string          `json:"pipeline_id"`
 	PipelineVersionID     string          `json:"pipeline_version_id"`

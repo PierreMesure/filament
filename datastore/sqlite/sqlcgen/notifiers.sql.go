@@ -15,7 +15,7 @@ INSERT INTO notifier (id, tenant_id, pipeline_id, name, notification_type, is_en
   events, resources, config, secret_refs, created_by_user_id, updated_by_user_id, created_at, updated_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6,
   ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, version, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
+RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
 `
 
 type CreateNotifierParams struct {
@@ -64,7 +64,6 @@ func (q *Queries) CreateNotifier(ctx context.Context, arg CreateNotifierParams) 
 		&i.Resources,
 		&i.Config,
 		&i.SecretRefs,
-		&i.Version,
 		&i.IsDeleted,
 		&i.DeletedAt,
 		&i.CreatedByUserID,
@@ -77,19 +76,17 @@ func (q *Queries) CreateNotifier(ctx context.Context, arg CreateNotifierParams) 
 }
 
 const deleteNotifier = `-- name: DeleteNotifier :one
-UPDATE notifier SET is_deleted = 1, deleted_at = ?1, updated_at = ?2, version = version + 1
-WHERE tenant_id = ?3 AND pipeline_id = ?4 AND id = ?5
-  AND version = ?6 AND is_deleted = 0
-RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, version, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
+UPDATE notifier SET is_deleted = 1, deleted_at = ?1, updated_at = ?2
+WHERE tenant_id = ?3 AND pipeline_id = ?4 AND id = ?5 AND is_deleted = 0
+RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
 `
 
 type DeleteNotifierParams struct {
-	DeletedAt       sql.NullInt64
-	UpdatedAt       int64
-	TenantID        string
-	PipelineID      string
-	NotifierID      string
-	ExpectedVersion int64
+	DeletedAt  sql.NullInt64
+	UpdatedAt  int64
+	TenantID   string
+	PipelineID string
+	NotifierID string
 }
 
 func (q *Queries) DeleteNotifier(ctx context.Context, arg DeleteNotifierParams) (*Notifier, error) {
@@ -99,7 +96,6 @@ func (q *Queries) DeleteNotifier(ctx context.Context, arg DeleteNotifierParams) 
 		arg.TenantID,
 		arg.PipelineID,
 		arg.NotifierID,
-		arg.ExpectedVersion,
 	)
 	var i Notifier
 	err := row.Scan(
@@ -113,7 +109,6 @@ func (q *Queries) DeleteNotifier(ctx context.Context, arg DeleteNotifierParams) 
 		&i.Resources,
 		&i.Config,
 		&i.SecretRefs,
-		&i.Version,
 		&i.IsDeleted,
 		&i.DeletedAt,
 		&i.CreatedByUserID,
@@ -126,7 +121,7 @@ func (q *Queries) DeleteNotifier(ctx context.Context, arg DeleteNotifierParams) 
 }
 
 const deletePipelineNotifiers = `-- name: DeletePipelineNotifiers :exec
-UPDATE notifier SET is_deleted = 1, deleted_at = ?1, updated_at = ?2, version = version + 1
+UPDATE notifier SET is_deleted = 1, deleted_at = ?1, updated_at = ?2
 WHERE tenant_id = ?3 AND pipeline_id = ?4 AND is_deleted = 0
 `
 
@@ -148,7 +143,7 @@ func (q *Queries) DeletePipelineNotifiers(ctx context.Context, arg DeletePipelin
 }
 
 const getNotifier = `-- name: GetNotifier :one
-SELECT id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, version, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at FROM notifier
+SELECT id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at FROM notifier
 WHERE tenant_id = ?1 AND pipeline_id = ?2 AND id = ?3
 `
 
@@ -172,7 +167,6 @@ func (q *Queries) GetNotifier(ctx context.Context, arg GetNotifierParams) (*Noti
 		&i.Resources,
 		&i.Config,
 		&i.SecretRefs,
-		&i.Version,
 		&i.IsDeleted,
 		&i.DeletedAt,
 		&i.CreatedByUserID,
@@ -185,7 +179,7 @@ func (q *Queries) GetNotifier(ctx context.Context, arg GetNotifierParams) (*Noti
 }
 
 const listNotifiers = `-- name: ListNotifiers :many
-SELECT id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, version, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at FROM notifier
+SELECT id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at FROM notifier
 WHERE tenant_id = ?1 AND pipeline_id = ?2
   AND (cast(?3 AS boolean) OR is_deleted = 0)
 ORDER BY id
@@ -217,7 +211,6 @@ func (q *Queries) ListNotifiers(ctx context.Context, arg ListNotifiersParams) ([
 			&i.Resources,
 			&i.Config,
 			&i.SecretRefs,
-			&i.Version,
 			&i.IsDeleted,
 			&i.DeletedAt,
 			&i.CreatedByUserID,
@@ -260,10 +253,9 @@ func (q *Queries) LockNotifierPipeline(ctx context.Context, arg LockNotifierPipe
 const updateNotifier = `-- name: UpdateNotifier :one
 UPDATE notifier SET name = ?1, is_enabled = ?2,
   events = ?3, resources = ?4, config = ?5, secret_refs = ?6,
-  version = version + 1, updated_at = ?7, updated_by_user_id = ?8
-WHERE tenant_id = ?9 AND pipeline_id = ?10 AND id = ?11
-  AND version = ?12 AND is_deleted = 0
-RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, version, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
+  updated_at = ?7, updated_by_user_id = ?8
+WHERE tenant_id = ?9 AND pipeline_id = ?10 AND id = ?11 AND is_deleted = 0
+RETURNING id, tenant_id, pipeline_id, name, notification_type, is_enabled, events, resources, config, secret_refs, is_deleted, deleted_at, created_by_user_id, updated_by_user_id, deleted_by_user_id, created_at, updated_at
 `
 
 type UpdateNotifierParams struct {
@@ -278,7 +270,6 @@ type UpdateNotifierParams struct {
 	TenantID        string
 	PipelineID      string
 	NotifierID      string
-	ExpectedVersion int64
 }
 
 func (q *Queries) UpdateNotifier(ctx context.Context, arg UpdateNotifierParams) (*Notifier, error) {
@@ -294,7 +285,6 @@ func (q *Queries) UpdateNotifier(ctx context.Context, arg UpdateNotifierParams) 
 		arg.TenantID,
 		arg.PipelineID,
 		arg.NotifierID,
-		arg.ExpectedVersion,
 	)
 	var i Notifier
 	err := row.Scan(
@@ -308,7 +298,6 @@ func (q *Queries) UpdateNotifier(ctx context.Context, arg UpdateNotifierParams) 
 		&i.Resources,
 		&i.Config,
 		&i.SecretRefs,
-		&i.Version,
 		&i.IsDeleted,
 		&i.DeletedAt,
 		&i.CreatedByUserID,

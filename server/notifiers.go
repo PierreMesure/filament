@@ -7,47 +7,54 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/galaxy-io/filament"
 	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 )
 
-// CreatePipelineNotifier stores the destination as a secret and adds a rule.
+// CreatePipelineNotifier stores secret fields and adds a rule.
 func (a *Server) CreatePipelineNotifier(ctx context.Context, req *connect.Request[ingestionv1.CreatePipelineNotifierRequest]) (*connect.Response[ingestionv1.CreatePipelineNotifierResponse], error) {
 	store, tenant, err := a.notifierPipeline(ctx, req.Msg.GetPipelineId())
 	if err != nil {
 		return nil, err
 	}
-	n, err := notifierFromInput(req.Msg.GetNotifier())
+	n, cfg, refs, err := notifierFromInput(req.Msg.GetNotifier(), string(tenant))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	n.Id, n.TenantId, n.PipelineId = uuid.NewString(), string(tenant), req.Msg.GetPipelineId()
-	ref, written, err := a.notifierDestination(ctx, n, req.Msg.GetNotifier().GetWebhook())
-	if err != nil {
+	if err := a.validateNotifierConfig(ctx, string(tenant), cfg, refs); err != nil {
 		return nil, err
 	}
-	n.SecretRefs = map[string]string{"destination": ref}
+	n.Id, n.TenantId, n.PipelineId = uuid.NewString(), string(tenant), req.Msg.GetPipelineId()
+	written, err := a.storeNotifierSecretFields(ctx, string(tenant), n.Id, cfg, refs, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	config, err := structpb.NewStruct(cfg)
+	if err != nil {
+		a.deleteSecretRefs(ctx, written)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	n.Config, n.SecretRefs = config, refs
 	saved, err := store.CreateNotifier(ctx, n)
 	if err != nil {
-		if written {
-			a.deleteNotifierSecret(ctx, n, ref)
-		}
+		a.deleteSecretRefs(ctx, written)
 		return nil, notifierStoreError(err)
 	}
 	return connect.NewResponse(&ingestionv1.CreatePipelineNotifierResponse{Notifier: saved}), nil
 }
 
-// UpdatePipelineNotifier replaces settings at the version the caller last read.
+// UpdatePipelineNotifier replaces a rule's settings. The last write wins.
 func (a *Server) UpdatePipelineNotifier(ctx context.Context, req *connect.Request[ingestionv1.UpdatePipelineNotifierRequest]) (*connect.Response[ingestionv1.UpdatePipelineNotifierResponse], error) {
 	store, tenant, err := a.notifierPipeline(ctx, req.Msg.GetPipelineId())
 	if err != nil {
 		return nil, err
 	}
-	if req.Msg.GetNotifierId() == "" || req.Msg.GetVersion() < 1 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notifier_id and a positive version are required"))
+	if req.Msg.GetNotifierId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notifier_id is required"))
 	}
-	n, err := notifierFromInput(req.Msg.GetNotifier())
+	n, cfg, refs, err := notifierFromInput(req.Msg.GetNotifier(), string(tenant))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -56,30 +63,33 @@ func (a *Server) UpdatePipelineNotifier(ctx context.Context, req *connect.Reques
 		return nil, notifierStoreError(err)
 	}
 	if stored.GetDeletedAt() != 0 {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("notifier is deleted"))
-	}
-	if stored.GetVersion() != req.Msg.GetVersion() {
-		return nil, notifierStoreError(filament.ErrVersionConflict)
+		return nil, notifierStoreError(fmt.Errorf("notifier is deleted: %w", filament.ErrNotFound))
 	}
 	if stored.GetNotificationType() != n.GetNotificationType() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notification type cannot change"))
 	}
-	ref, written, err := a.notifierDestination(ctx, stored, req.Msg.GetNotifier().GetWebhook())
-	if err != nil {
+	if err := a.validateNotifierConfig(ctx, string(tenant), cfg, refs); err != nil {
 		return nil, err
 	}
-	n.Id, n.TenantId, n.PipelineId, n.Version = stored.GetId(), string(tenant), stored.GetPipelineId(), stored.GetVersion()
-	n.SecretRefs = map[string]string{"destination": ref}
+	// A newly submitted value gets a fresh ref. The old value stays active
+	// until the update succeeds.
+	written, err := a.storeNotifierSecretFields(ctx, string(tenant), stored.GetId(), cfg, refs, true)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	config, err := structpb.NewStruct(cfg)
+	if err != nil {
+		a.deleteSecretRefs(ctx, written)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	n.Id, n.TenantId, n.PipelineId = stored.GetId(), string(tenant), stored.GetPipelineId()
+	n.Config, n.SecretRefs = config, refs
 	saved, err := store.UpdateNotifier(ctx, n)
 	if err != nil {
-		if written {
-			a.deleteNotifierSecret(ctx, n, ref)
-		}
+		a.deleteSecretRefs(ctx, written)
 		return nil, notifierStoreError(err)
 	}
-	if old := stored.GetSecretRefs()["destination"]; old != ref {
-		a.deleteNotifierSecret(ctx, stored, old)
-	}
+	a.deleteReplacedSecretRefs(ctx, stored.GetSecretRefs(), saved.GetSecretRefs())
 	return connect.NewResponse(&ingestionv1.UpdatePipelineNotifierResponse{Notifier: saved}), nil
 }
 
@@ -96,20 +106,20 @@ func (a *Server) ListPipelineNotifiers(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&ingestionv1.ListPipelineNotifiersResponse{Notifiers: rules}), nil
 }
 
-// DeletePipelineNotifier soft-deletes a rule, then removes its owned destination.
+// DeletePipelineNotifier soft-deletes a rule, then removes the secrets it owned.
 func (a *Server) DeletePipelineNotifier(ctx context.Context, req *connect.Request[ingestionv1.DeletePipelineNotifierRequest]) (*connect.Response[ingestionv1.DeletePipelineNotifierResponse], error) {
 	store, tenant, err := a.notifierPipeline(ctx, req.Msg.GetPipelineId())
 	if err != nil {
 		return nil, err
 	}
-	if req.Msg.GetNotifierId() == "" || req.Msg.GetVersion() < 1 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notifier_id and a positive version are required"))
+	if req.Msg.GetNotifierId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("notifier_id is required"))
 	}
-	n, err := store.DeleteNotifier(ctx, tenant, req.Msg.GetPipelineId(), req.Msg.GetNotifierId(), req.Msg.GetVersion())
+	n, err := store.DeleteNotifier(ctx, tenant, req.Msg.GetPipelineId(), req.Msg.GetNotifierId())
 	if err != nil {
 		return nil, notifierStoreError(err)
 	}
-	a.deleteNotifierSecret(ctx, n, n.GetSecretRefs()["destination"])
+	a.deleteSecretRefs(ctx, mapValues(n.GetSecretRefs()))
 	return connect.NewResponse(&ingestionv1.DeletePipelineNotifierResponse{}), nil
 }
 
@@ -132,12 +142,8 @@ func (a *Server) notifierPipeline(ctx context.Context, pipelineID string) (filam
 }
 
 func notifierStoreError(err error) error {
-	switch {
-	case errors.Is(err, filament.ErrNotFound):
+	if errors.Is(err, filament.ErrNotFound) {
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("pipeline or notifier not found: %w", err))
-	case errors.Is(err, filament.ErrVersionConflict):
-		return connect.NewError(connect.CodeAborted, fmt.Errorf("notifier version conflict; reload before retrying: %w", err))
-	default:
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("notifier storage operation failed: %w", err))
 	}
+	return connect.NewError(connect.CodeInternal, fmt.Errorf("notifier storage operation failed: %w", err))
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -318,6 +319,24 @@ func extractSecretFields(schema []filament.ConfigField, cfg map[string]any, pare
 			value, present := cfg[field.Name]
 			delete(cfg, field.Name) // plaintext must never reach the connection store
 			if !present {
+				continue
+			}
+			if field.Type == filament.FieldObject {
+				// An object secret is stored as its JSON. An empty object is
+				// reported with a blank value so the caller can clear the field.
+				object, ok := value.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("secret field %q must be an object", path)
+				}
+				encoded := ""
+				if len(object) > 0 {
+					raw, err := json.Marshal(object)
+					if err != nil {
+						return nil, fmt.Errorf("secret field %q: %w", path, err)
+					}
+					encoded = string(raw)
+				}
+				secrets = append(secrets, extractedSecretField{path: path, value: encoded})
 				continue
 			}
 			s, ok := value.(string)

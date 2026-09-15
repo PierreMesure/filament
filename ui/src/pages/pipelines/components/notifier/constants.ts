@@ -1,14 +1,11 @@
 import type { PinnedOptions } from "@galaxy-io/dls/inputs/MultiSelectInput";
 import type { SelectInputOption } from "@galaxy-io/dls/inputs/SelectInput";
 
-import {
-  PipelineNotifierEvent,
-  type PipelineNotifierState,
-} from "@/pages/pipelines/components/notifier/types";
+import { NotifierEvent } from "@/gen/ingestion/v1/notifiers_pb";
 
-export const PIPELINE_NOTIFIER_EVENT_ALL = "*";
+import type { PipelineNotifierState } from "@/pages/pipelines/components/notifier/types";
 
-export const PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY = "destination";
+export const PIPELINE_NOTIFIER_HEADERS_SECRET_REF_KEY = "headers";
 
 export const PIPELINE_NOTIFIER_TABLE_COLUMN_WIDTH_ENABLED = 64;
 
@@ -19,10 +16,27 @@ export const PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT = `{
   "Leave blank to keep current value": ""
 }`;
 
-export const PIPELINE_NOTIFIER_EVENTS = Object.values(PipelineNotifierEvent);
+export const PIPELINE_NOTIFIER_EVENT_TO_LABEL_MAP: Record<NotifierEvent, string> = {
+  [NotifierEvent.UNSPECIFIED]: "Unknown",
+  [NotifierEvent.RUN_STARTED]: "run.started",
+  [NotifierEvent.RUN_COMPLETED]: "run.completed",
+  [NotifierEvent.RUN_FAILED]: "run.failed",
+  [NotifierEvent.RUN_PARTIAL]: "run.partial",
+  [NotifierEvent.RUN_CANCELED]: "run.canceled",
+  [NotifierEvent.RUN_PAUSED]: "run.paused",
+};
+
+export const PIPELINE_NOTIFIER_EVENTS = Object.values(NotifierEvent).filter(
+  (event): event is NotifierEvent =>
+    typeof event === "number" && event !== NotifierEvent.UNSPECIFIED,
+);
 
 export const PIPELINE_NOTIFIER_EVENT_OPTIONS: SelectInputOption[] = PIPELINE_NOTIFIER_EVENTS.map(
-  (event) => ({ id: event, label: event, value: event }),
+  (event) => ({
+    id: String(event),
+    label: PIPELINE_NOTIFIER_EVENT_TO_LABEL_MAP[event],
+    value: event,
+  }),
 );
 
 export const PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION: PinnedOptions = {
@@ -34,8 +48,8 @@ export const PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION: PinnedOptions = {
 export const PIPELINE_NOTIFIER_DEFAULT_STATE: PipelineNotifierState = {
   name: "",
   isEnabled: true,
-  events: [PipelineNotifierEvent.RUN_FAILED],
-  hasStoredDestination: false,
+  events: [NotifierEvent.RUN_FAILED],
   url: "",
   headers: "",
+  secretRefs: {},
 };

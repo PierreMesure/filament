@@ -14,15 +14,26 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/http/httpguts"
+
+	"github.com/galaxy-io/filament"
 )
 
-// Destination is stored as one secret, including URL path and query credentials.
+// HeadersField is the config field and secret_refs key for request headers.
+const HeadersField = "headers"
+
+// ConfigSchema declares the webhook fields: a plain url and secret headers.
+var ConfigSchema = filament.ConfigSchema{Fields: []filament.ConfigField{
+	{Name: "url", Type: filament.FieldString, Required: true},
+	{Name: HeadersField, Type: filament.FieldObject, Secret: true},
+}}
+
+// Destination is the resolved delivery target, including secret header values.
 type Destination struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// ParseDestination decodes and validates a resolved secret without exposing it in errors.
+// ParseDestination decodes and validates a resolved destination without exposing it in errors.
 func ParseDestination(raw []byte) (Destination, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -36,30 +47,63 @@ func ParseDestination(raw []byte) (Destination, error) {
 	return NormalizeAndValidateDestination(destination)
 }
 
+// DestinationFromConfig reads url and optional headers from an effective
+// config whose secret fields have been resolved.
+func DestinationFromConfig(cfg map[string]any) (Destination, error) {
+	rawURL, _ := cfg["url"].(string)
+	destination := Destination{URL: rawURL}
+	if raw, present := cfg[HeadersField]; present && raw != nil {
+		object, ok := raw.(map[string]any)
+		if !ok {
+			return Destination{}, fmt.Errorf("webhook: headers must be an object")
+		}
+		destination.Headers = make(map[string]string, len(object))
+		for name, value := range object {
+			s, ok := value.(string)
+			if !ok {
+				return Destination{}, fmt.Errorf("webhook: header values must be strings")
+			}
+			destination.Headers[name] = s
+		}
+	}
+	return NormalizeAndValidateDestination(destination)
+}
+
 // NormalizeAndValidateDestination checks settings and canonicalizes header names.
 func NormalizeAndValidateDestination(d Destination) (Destination, error) {
-	if err := validateURL(d.URL); err != nil {
+	if err := ValidateURL(d.URL); err != nil {
 		return Destination{}, err
 	}
-	headers := make(map[string]string, len(d.Headers))
-	for name, value := range d.Headers {
-		if !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) || !utf8.ValidString(value) {
-			return Destination{}, fmt.Errorf("webhook: invalid header name or value")
-		}
-		name = textproto.CanonicalMIMEHeaderKey(name)
-		if name == "Host" || name == "Content-Type" || strings.HasPrefix(name, "X-Filament-") {
-			return Destination{}, fmt.Errorf("webhook: header is set by Filament")
-		}
-		if _, exists := headers[name]; exists {
-			return Destination{}, fmt.Errorf("webhook: duplicate header name")
-		}
-		headers[name] = value
+	headers, err := NormalizeAndValidateHeaders(d.Headers)
+	if err != nil {
+		return Destination{}, err
 	}
 	d.Headers = headers
 	return d, nil
 }
 
-func validateURL(raw string) error {
+// NormalizeAndValidateHeaders canonicalizes header names and rejects names
+// Filament sets, invalid characters, and duplicates.
+func NormalizeAndValidateHeaders(in map[string]string) (map[string]string, error) {
+	headers := make(map[string]string, len(in))
+	for name, value := range in {
+		if !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) || !utf8.ValidString(value) {
+			return nil, fmt.Errorf("webhook: invalid header name or value")
+		}
+		name = textproto.CanonicalMIMEHeaderKey(name)
+		if name == "Host" || name == "Content-Type" || strings.HasPrefix(name, "X-Filament-") {
+			return nil, fmt.Errorf("webhook: header is set by Filament")
+		}
+		if _, exists := headers[name]; exists {
+			return nil, fmt.Errorf("webhook: duplicate header name")
+		}
+		headers[name] = value
+	}
+	return headers, nil
+}
+
+// ValidateURL requires an absolute public HTTP(S) URL without userinfo or a fragment.
+func ValidateURL(raw string) error {
 	if !utf8.ValidString(raw) {
 		return fmt.Errorf("webhook: URL must be valid text")
 	}

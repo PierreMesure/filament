@@ -37,19 +37,14 @@ import { useConfirm } from "@/hooks/useConfirm";
 
 import { getErrorMessage } from "@/utils/errors";
 
-interface PipelineSettingsPageNotifierRow extends PipelineNotifier {
-  version: Notifier["version"];
-}
-
 interface PipelineSettingsPageNotifierToast {
   header: string;
   subheader: string;
 }
 
-const mapNotifierToRow = (notifier: Notifier): PipelineSettingsPageNotifierRow => ({
+const mapNotifierToRow = (notifier: Notifier): PipelineNotifier => ({
   ...mapNotifierToPipelineNotifierState(notifier),
   id: notifier.id,
-  version: notifier.version,
 });
 
 const PipelineSettingsPageNotifications = () => {
@@ -65,20 +60,15 @@ const PipelineSettingsPageNotifications = () => {
   const { mutate: updateNotifier, isPending: isUpdating } = useUpdatePipelineNotifierMutation();
   const { mutate: deleteNotifier, isPending: isDeleting } = useDeletePipelineNotifierMutation();
 
-  const { handleOpen, isOpen, target, handleClose, handleConfirm } =
-    useConfirm<PipelineSettingsPageNotifierRow>({
-      entityLabel: "Notifier",
-      entityName: (row) => row.name,
-      onConfirm: (row, { onSuccess, onError }) =>
-        deleteNotifier(
-          create(DeletePipelineNotifierRequestSchema, {
-            pipelineId,
-            notifierId: row.id,
-            version: row.version,
-          }),
-          { onSuccess, onError },
-        ),
-    });
+  const { handleOpen, isOpen, target, handleClose, handleConfirm } = useConfirm<PipelineNotifier>({
+    entityLabel: "Notifier",
+    entityName: (row) => row.name,
+    onConfirm: (row, { onSuccess, onError }) =>
+      deleteNotifier(
+        create(DeletePipelineNotifierRequestSchema, { pipelineId, notifierId: row.id }),
+        { onSuccess, onError },
+      ),
+  });
 
   const handleCreate = (state: PipelineNotifierState, onSuccess: () => void) => {
     createNotifier(
@@ -107,7 +97,7 @@ const PipelineSettingsPageNotifications = () => {
   };
 
   const updateRow = (
-    row: PipelineSettingsPageNotifierRow,
+    row: PipelineNotifier,
     state: PipelineNotifierState,
     toast: PipelineSettingsPageNotifierToast,
     onSuccess?: () => void,
@@ -116,7 +106,6 @@ const PipelineSettingsPageNotifications = () => {
       create(UpdatePipelineNotifierRequestSchema, {
         pipelineId,
         notifierId: row.id,
-        version: row.version,
         notifier: mapPipelineNotifierStateToInput(state),
       }),
       {
@@ -136,7 +125,7 @@ const PipelineSettingsPageNotifications = () => {
   };
 
   const handleUpdate = (
-    row: PipelineSettingsPageNotifierRow,
+    row: PipelineNotifier,
     state: PipelineNotifierState,
     onSuccess: () => void,
   ) => {
@@ -148,7 +137,7 @@ const PipelineSettingsPageNotifications = () => {
     );
   };
 
-  const handleToggleEnabled = (row: PipelineSettingsPageNotifierRow, isEnabled: boolean) => {
+  const handleToggleEnabled = (row: PipelineNotifier, isEnabled: boolean) => {
     updateRow(
       row,
       { ...row, isEnabled },

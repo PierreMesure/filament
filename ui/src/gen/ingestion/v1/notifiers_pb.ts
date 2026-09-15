@@ -4,16 +4,18 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Message } from "@bufbuild/protobuf";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file ingestion/v1/notifiers.proto.
  */
 export const file_ingestion_v1_notifiers: GenFile = /*@__PURE__*/
-  fileDesc("Chxpbmdlc3Rpb24vdjEvbm90aWZpZXJzLnByb3RvEgxpbmdlc3Rpb24udjEizwMKCE5vdGlmaWVyEgoKAmlkGAEgASgJEhEKCXRlbmFudF9pZBgCIAEoCRITCgtwaXBlbGluZV9pZBgDIAEoCRIMCgRuYW1lGAQgASgJEjkKEW5vdGlmaWNhdGlvbl90eXBlGAUgASgOMh4uaW5nZXN0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSEgoKaXNfZW5hYmxlZBgGIAEoCBIOCgZldmVudHMYByADKAkSEQoJcmVzb3VyY2VzGAggAygJEjsKC3NlY3JldF9yZWZzGAkgAygLMiYuaW5nZXN0aW9uLnYxLk5vdGlmaWVyLlNlY3JldFJlZnNFbnRyeRIPCgd2ZXJzaW9uGAogASgDEhIKCmNyZWF0ZWRfYXQYCyABKAMSEgoKdXBkYXRlZF9hdBgMIAEoAxISCgpkZWxldGVkX2F0GA0gASgDEhoKEmNyZWF0ZWRfYnlfdXNlcl9pZBgOIAEoCRIaChJ1cGRhdGVkX2J5X3VzZXJfaWQYDyABKAkSGgoSZGVsZXRlZF9ieV91c2VyX2lkGBAgASgJGjEKD1NlY3JldFJlZnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBItEBCg1Ob3RpZmllcklucHV0EgwKBG5hbWUYASABKAkSOQoRbm90aWZpY2F0aW9uX3R5cGUYAiABKA4yHi5pbmdlc3Rpb24udjEuTm90aWZpY2F0aW9uVHlwZRISCgppc19lbmFibGVkGAMgASgIEg4KBmV2ZW50cxgEIAMoCRIRCglyZXNvdXJjZXMYBSADKAkSNQoHd2ViaG9vaxgGIAEoCzIiLmluZ2VzdGlvbi52MS5XZWJob29rTm90aWZpZXJJbnB1dEgAQgkKB2NoYW5uZWwijwEKFFdlYmhvb2tOb3RpZmllcklucHV0Ej8KC2Rlc3RpbmF0aW9uGAEgASgLMiguaW5nZXN0aW9uLnYxLldlYmhvb2tOb3RpZmllckRlc3RpbmF0aW9uSAASIAoWZGVzdGluYXRpb25fc2VjcmV0X3JlZhgCIAEoCUgAQhQKEmRlc3RpbmF0aW9uX3NvdXJjZSKhAQoaV2ViaG9va05vdGlmaWVyRGVzdGluYXRpb24SCwoDdXJsGAEgASgJEkYKB2hlYWRlcnMYAiADKAsyNS5pbmdlc3Rpb24udjEuV2ViaG9va05vdGlmaWVyRGVzdGluYXRpb24uSGVhZGVyc0VudHJ5Gi4KDEhlYWRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImMKHUNyZWF0ZVBpcGVsaW5lTm90aWZpZXJSZXF1ZXN0EhMKC3BpcGVsaW5lX2lkGAEgASgJEi0KCG5vdGlmaWVyGAIgASgLMhsuaW5nZXN0aW9uLnYxLk5vdGlmaWVySW5wdXQiSgoeQ3JlYXRlUGlwZWxpbmVOb3RpZmllclJlc3BvbnNlEigKCG5vdGlmaWVyGAEgASgLMhYuaW5nZXN0aW9uLnYxLk5vdGlmaWVyIokBCh1VcGRhdGVQaXBlbGluZU5vdGlmaWVyUmVxdWVzdBITCgtwaXBlbGluZV9pZBgBIAEoCRITCgtub3RpZmllcl9pZBgCIAEoCRIPCgd2ZXJzaW9uGAMgASgDEi0KCG5vdGlmaWVyGAQgASgLMhsuaW5nZXN0aW9uLnYxLk5vdGlmaWVySW5wdXQiSgoeVXBkYXRlUGlwZWxpbmVOb3RpZmllclJlc3BvbnNlEigKCG5vdGlmaWVyGAEgASgLMhYuaW5nZXN0aW9uLnYxLk5vdGlmaWVyIjMKHExpc3RQaXBlbGluZU5vdGlmaWVyc1JlcXVlc3QSEwoLcGlwZWxpbmVfaWQYASABKAkiSgodTGlzdFBpcGVsaW5lTm90aWZpZXJzUmVzcG9uc2USKQoJbm90aWZpZXJzGAEgAygLMhYuaW5nZXN0aW9uLnYxLk5vdGlmaWVyIloKHURlbGV0ZVBpcGVsaW5lTm90aWZpZXJSZXF1ZXN0EhMKC3BpcGVsaW5lX2lkGAEgASgJEhMKC25vdGlmaWVyX2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAMiIAoeRGVsZXRlUGlwZWxpbmVOb3RpZmllclJlc3BvbnNlKlQKEE5vdGlmaWNhdGlvblR5cGUSIQodTk9USUZJQ0FUSU9OX1RZUEVfVU5TUEVDSUZJRUQQABIdChlOT1RJRklDQVRJT05fVFlQRV9XRUJIT09LEAFiBnByb3RvMw");
+  fileDesc("Chxpbmdlc3Rpb24vdjEvbm90aWZpZXJzLnByb3RvEgxpbmdlc3Rpb24udjEihAQKCE5vdGlmaWVyEgoKAmlkGAEgASgJEhEKCXRlbmFudF9pZBgCIAEoCRITCgtwaXBlbGluZV9pZBgDIAEoCRIMCgRuYW1lGAQgASgJEjkKEW5vdGlmaWNhdGlvbl90eXBlGAUgASgOMh4uaW5nZXN0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSEgoKaXNfZW5hYmxlZBgGIAEoCBIrCgZldmVudHMYByADKA4yGy5pbmdlc3Rpb24udjEuTm90aWZpZXJFdmVudBIRCglyZXNvdXJjZXMYCCADKAkSJwoGY29uZmlnGAkgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBI7CgtzZWNyZXRfcmVmcxgKIAMoCzImLmluZ2VzdGlvbi52MS5Ob3RpZmllci5TZWNyZXRSZWZzRW50cnkSEgoKY3JlYXRlZF9hdBgLIAEoAxISCgp1cGRhdGVkX2F0GAwgASgDEhIKCmRlbGV0ZWRfYXQYDSABKAMSGgoSY3JlYXRlZF9ieV91c2VyX2lkGA4gASgJEhoKEnVwZGF0ZWRfYnlfdXNlcl9pZBgPIAEoCRIaChJkZWxldGVkX2J5X3VzZXJfaWQYECABKAkaMQoPU2VjcmV0UmVmc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiygIKDU5vdGlmaWVySW5wdXQSDAoEbmFtZRgBIAEoCRI5ChFub3RpZmljYXRpb25fdHlwZRgCIAEoDjIeLmluZ2VzdGlvbi52MS5Ob3RpZmljYXRpb25UeXBlEhIKCmlzX2VuYWJsZWQYAyABKAgSKwoGZXZlbnRzGAQgAygOMhsuaW5nZXN0aW9uLnYxLk5vdGlmaWVyRXZlbnQSEQoJcmVzb3VyY2VzGAUgAygJEicKBmNvbmZpZxgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSQAoLc2VjcmV0X3JlZnMYByADKAsyKy5pbmdlc3Rpb24udjEuTm90aWZpZXJJbnB1dC5TZWNyZXRSZWZzRW50cnkaMQoPU2VjcmV0UmVmc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiYwodQ3JlYXRlUGlwZWxpbmVOb3RpZmllclJlcXVlc3QSEwoLcGlwZWxpbmVfaWQYASABKAkSLQoIbm90aWZpZXIYAiABKAsyGy5pbmdlc3Rpb24udjEuTm90aWZpZXJJbnB1dCJKCh5DcmVhdGVQaXBlbGluZU5vdGlmaWVyUmVzcG9uc2USKAoIbm90aWZpZXIYASABKAsyFi5pbmdlc3Rpb24udjEuTm90aWZpZXIieAodVXBkYXRlUGlwZWxpbmVOb3RpZmllclJlcXVlc3QSEwoLcGlwZWxpbmVfaWQYASABKAkSEwoLbm90aWZpZXJfaWQYAiABKAkSLQoIbm90aWZpZXIYAyABKAsyGy5pbmdlc3Rpb24udjEuTm90aWZpZXJJbnB1dCJKCh5VcGRhdGVQaXBlbGluZU5vdGlmaWVyUmVzcG9uc2USKAoIbm90aWZpZXIYASABKAsyFi5pbmdlc3Rpb24udjEuTm90aWZpZXIiMwocTGlzdFBpcGVsaW5lTm90aWZpZXJzUmVxdWVzdBITCgtwaXBlbGluZV9pZBgBIAEoCSJKCh1MaXN0UGlwZWxpbmVOb3RpZmllcnNSZXNwb25zZRIpCglub3RpZmllcnMYASADKAsyFi5pbmdlc3Rpb24udjEuTm90aWZpZXIiSQodRGVsZXRlUGlwZWxpbmVOb3RpZmllclJlcXVlc3QSEwoLcGlwZWxpbmVfaWQYASABKAkSEwoLbm90aWZpZXJfaWQYAiABKAkiIAoeRGVsZXRlUGlwZWxpbmVOb3RpZmllclJlc3BvbnNlKlQKEE5vdGlmaWNhdGlvblR5cGUSIQodTk9USUZJQ0FUSU9OX1RZUEVfVU5TUEVDSUZJRUQQABIdChlOT1RJRklDQVRJT05fVFlQRV9XRUJIT09LEAEq8AEKDU5vdGlmaWVyRXZlbnQSHgoaTk9USUZJRVJfRVZFTlRfVU5TUEVDSUZJRUQQABIeChpOT1RJRklFUl9FVkVOVF9SVU5fU1RBUlRFRBABEiAKHE5PVElGSUVSX0VWRU5UX1JVTl9DT01QTEVURUQQAhIdChlOT1RJRklFUl9FVkVOVF9SVU5fRkFJTEVEEAMSHgoaTk9USUZJRVJfRVZFTlRfUlVOX1BBUlRJQUwQBBIfChtOT1RJRklFUl9FVkVOVF9SVU5fQ0FOQ0VMRUQQBRIdChlOT1RJRklFUl9FVkVOVF9SVU5fUEFVU0VEEAZiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
- * Notifier contains settings and secret references, never destination values.
+ * Notifier holds settings, plain config, and secret references, never secret
+ * values. Webhook config carries url; secret_refs carries headers.
  *
  * @generated from message ingestion.v1.Notifier
  */
@@ -49,9 +51,9 @@ export type Notifier = Message<"ingestion.v1.Notifier"> & {
   isEnabled: boolean;
 
   /**
-   * @generated from field: repeated string events = 7;
+   * @generated from field: repeated ingestion.v1.NotifierEvent events = 7;
    */
-  events: string[];
+  events: NotifierEvent[];
 
   /**
    * @generated from field: repeated string resources = 8;
@@ -59,14 +61,14 @@ export type Notifier = Message<"ingestion.v1.Notifier"> & {
   resources: string[];
 
   /**
-   * @generated from field: map<string, string> secret_refs = 9;
+   * @generated from field: google.protobuf.Struct config = 9;
    */
-  secretRefs: { [key: string]: string };
+  config?: JsonObject | undefined;
 
   /**
-   * @generated from field: int64 version = 10;
+   * @generated from field: map<string, string> secret_refs = 10;
    */
-  version: bigint;
+  secretRefs: { [key: string]: string };
 
   /**
    * @generated from field: int64 created_at = 11;
@@ -107,8 +109,9 @@ export const NotifierSchema: GenMessage<Notifier> = /*@__PURE__*/
   messageDesc(file_ingestion_v1_notifiers, 0);
 
 /**
- * NotifierInput replaces the rule's settings. An omitted destination on update
- * keeps the existing secret reference.
+ * NotifierInput replaces the rule's settings. Secret fields in config are
+ * extracted and stored as secrets; on update, an omitted secret field keeps
+ * the reference echoed in secret_refs.
  *
  * @generated from message ingestion.v1.NotifierInput
  */
@@ -129,11 +132,9 @@ export type NotifierInput = Message<"ingestion.v1.NotifierInput"> & {
   isEnabled: boolean;
 
   /**
-   * Registered event names, or ["*"].
-   *
-   * @generated from field: repeated string events = 4;
+   * @generated from field: repeated ingestion.v1.NotifierEvent events = 4;
    */
-  events: string[];
+  events: NotifierEvent[];
 
   /**
    * Empty matches any resource.
@@ -143,15 +144,14 @@ export type NotifierInput = Message<"ingestion.v1.NotifierInput"> & {
   resources: string[];
 
   /**
-   * @generated from oneof ingestion.v1.NotifierInput.channel
+   * @generated from field: google.protobuf.Struct config = 6;
    */
-  channel: {
-    /**
-     * @generated from field: ingestion.v1.WebhookNotifierInput webhook = 6;
-     */
-    value: WebhookNotifierInput;
-    case: "webhook";
-  } | { case: undefined; value?: undefined };
+  config?: JsonObject | undefined;
+
+  /**
+   * @generated from field: map<string, string> secret_refs = 7;
+   */
+  secretRefs: { [key: string]: string };
 };
 
 /**
@@ -160,59 +160,6 @@ export type NotifierInput = Message<"ingestion.v1.NotifierInput"> & {
  */
 export const NotifierInputSchema: GenMessage<NotifierInput> = /*@__PURE__*/
   messageDesc(file_ingestion_v1_notifiers, 1);
-
-/**
- * @generated from message ingestion.v1.WebhookNotifierInput
- */
-export type WebhookNotifierInput = Message<"ingestion.v1.WebhookNotifierInput"> & {
-  /**
-   * @generated from oneof ingestion.v1.WebhookNotifierInput.destination_source
-   */
-  destinationSource: {
-    /**
-     * @generated from field: ingestion.v1.WebhookNotifierDestination destination = 1;
-     */
-    value: WebhookNotifierDestination;
-    case: "destination";
-  } | {
-    /**
-     * @generated from field: string destination_secret_ref = 2;
-     */
-    value: string;
-    case: "destinationSecretRef";
-  } | { case: undefined; value?: undefined };
-};
-
-/**
- * Describes the message ingestion.v1.WebhookNotifierInput.
- * Use `create(WebhookNotifierInputSchema)` to create a new message.
- */
-export const WebhookNotifierInputSchema: GenMessage<WebhookNotifierInput> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 2);
-
-/**
- * WebhookNotifierDestination is stored as a single secret and is never returned.
- *
- * @generated from message ingestion.v1.WebhookNotifierDestination
- */
-export type WebhookNotifierDestination = Message<"ingestion.v1.WebhookNotifierDestination"> & {
-  /**
-   * @generated from field: string url = 1;
-   */
-  url: string;
-
-  /**
-   * @generated from field: map<string, string> headers = 2;
-   */
-  headers: { [key: string]: string };
-};
-
-/**
- * Describes the message ingestion.v1.WebhookNotifierDestination.
- * Use `create(WebhookNotifierDestinationSchema)` to create a new message.
- */
-export const WebhookNotifierDestinationSchema: GenMessage<WebhookNotifierDestination> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 3);
 
 /**
  * @generated from message ingestion.v1.CreatePipelineNotifierRequest
@@ -234,7 +181,7 @@ export type CreatePipelineNotifierRequest = Message<"ingestion.v1.CreatePipeline
  * Use `create(CreatePipelineNotifierRequestSchema)` to create a new message.
  */
 export const CreatePipelineNotifierRequestSchema: GenMessage<CreatePipelineNotifierRequest> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 4);
+  messageDesc(file_ingestion_v1_notifiers, 2);
 
 /**
  * @generated from message ingestion.v1.CreatePipelineNotifierResponse
@@ -251,7 +198,7 @@ export type CreatePipelineNotifierResponse = Message<"ingestion.v1.CreatePipelin
  * Use `create(CreatePipelineNotifierResponseSchema)` to create a new message.
  */
 export const CreatePipelineNotifierResponseSchema: GenMessage<CreatePipelineNotifierResponse> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 5);
+  messageDesc(file_ingestion_v1_notifiers, 3);
 
 /**
  * @generated from message ingestion.v1.UpdatePipelineNotifierRequest
@@ -268,12 +215,7 @@ export type UpdatePipelineNotifierRequest = Message<"ingestion.v1.UpdatePipeline
   notifierId: string;
 
   /**
-   * @generated from field: int64 version = 3;
-   */
-  version: bigint;
-
-  /**
-   * @generated from field: ingestion.v1.NotifierInput notifier = 4;
+   * @generated from field: ingestion.v1.NotifierInput notifier = 3;
    */
   notifier?: NotifierInput | undefined;
 };
@@ -283,7 +225,7 @@ export type UpdatePipelineNotifierRequest = Message<"ingestion.v1.UpdatePipeline
  * Use `create(UpdatePipelineNotifierRequestSchema)` to create a new message.
  */
 export const UpdatePipelineNotifierRequestSchema: GenMessage<UpdatePipelineNotifierRequest> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 6);
+  messageDesc(file_ingestion_v1_notifiers, 4);
 
 /**
  * @generated from message ingestion.v1.UpdatePipelineNotifierResponse
@@ -300,7 +242,7 @@ export type UpdatePipelineNotifierResponse = Message<"ingestion.v1.UpdatePipelin
  * Use `create(UpdatePipelineNotifierResponseSchema)` to create a new message.
  */
 export const UpdatePipelineNotifierResponseSchema: GenMessage<UpdatePipelineNotifierResponse> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 7);
+  messageDesc(file_ingestion_v1_notifiers, 5);
 
 /**
  * @generated from message ingestion.v1.ListPipelineNotifiersRequest
@@ -317,7 +259,7 @@ export type ListPipelineNotifiersRequest = Message<"ingestion.v1.ListPipelineNot
  * Use `create(ListPipelineNotifiersRequestSchema)` to create a new message.
  */
 export const ListPipelineNotifiersRequestSchema: GenMessage<ListPipelineNotifiersRequest> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 8);
+  messageDesc(file_ingestion_v1_notifiers, 6);
 
 /**
  * @generated from message ingestion.v1.ListPipelineNotifiersResponse
@@ -334,7 +276,7 @@ export type ListPipelineNotifiersResponse = Message<"ingestion.v1.ListPipelineNo
  * Use `create(ListPipelineNotifiersResponseSchema)` to create a new message.
  */
 export const ListPipelineNotifiersResponseSchema: GenMessage<ListPipelineNotifiersResponse> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 9);
+  messageDesc(file_ingestion_v1_notifiers, 7);
 
 /**
  * @generated from message ingestion.v1.DeletePipelineNotifierRequest
@@ -349,11 +291,6 @@ export type DeletePipelineNotifierRequest = Message<"ingestion.v1.DeletePipeline
    * @generated from field: string notifier_id = 2;
    */
   notifierId: string;
-
-  /**
-   * @generated from field: int64 version = 3;
-   */
-  version: bigint;
 };
 
 /**
@@ -361,7 +298,7 @@ export type DeletePipelineNotifierRequest = Message<"ingestion.v1.DeletePipeline
  * Use `create(DeletePipelineNotifierRequestSchema)` to create a new message.
  */
 export const DeletePipelineNotifierRequestSchema: GenMessage<DeletePipelineNotifierRequest> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 10);
+  messageDesc(file_ingestion_v1_notifiers, 8);
 
 /**
  * @generated from message ingestion.v1.DeletePipelineNotifierResponse
@@ -374,7 +311,7 @@ export type DeletePipelineNotifierResponse = Message<"ingestion.v1.DeletePipelin
  * Use `create(DeletePipelineNotifierResponseSchema)` to create a new message.
  */
 export const DeletePipelineNotifierResponseSchema: GenMessage<DeletePipelineNotifierResponse> = /*@__PURE__*/
-  messageDesc(file_ingestion_v1_notifiers, 11);
+  messageDesc(file_ingestion_v1_notifiers, 9);
 
 /**
  * NotificationType identifies how a pipeline notification is delivered.
@@ -399,4 +336,53 @@ export enum NotificationType {
  */
 export const NotificationTypeSchema: GenEnum<NotificationType> = /*@__PURE__*/
   enumDesc(file_ingestion_v1_notifiers, 0);
+
+/**
+ * NotifierEvent identifies an event kind a notifier can deliver. Unspecified is
+ * an input sentinel and cannot be persisted.
+ *
+ * @generated from enum ingestion.v1.NotifierEvent
+ */
+export enum NotifierEvent {
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_STARTED = 1;
+   */
+  RUN_STARTED = 1,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_COMPLETED = 2;
+   */
+  RUN_COMPLETED = 2,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_FAILED = 3;
+   */
+  RUN_FAILED = 3,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_PARTIAL = 4;
+   */
+  RUN_PARTIAL = 4,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_CANCELED = 5;
+   */
+  RUN_CANCELED = 5,
+
+  /**
+   * @generated from enum value: NOTIFIER_EVENT_RUN_PAUSED = 6;
+   */
+  RUN_PAUSED = 6,
+}
+
+/**
+ * Describes the enum ingestion.v1.NotifierEvent.
+ */
+export const NotifierEventSchema: GenEnum<NotifierEvent> = /*@__PURE__*/
+  enumDesc(file_ingestion_v1_notifiers, 1);
 
