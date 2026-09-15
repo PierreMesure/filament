@@ -1,5 +1,5 @@
 ---
-name: http-connector
+name: filament-http-connector
 description: Research a product's official API documentation and build or update a Filament HTTP source connector, including its manifest, catalog registration, docs, and tests. Use for HTTP/SaaS connector work and manifest-versus-driver assessments.
 ---
 
