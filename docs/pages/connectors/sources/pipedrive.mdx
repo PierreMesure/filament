@@ -1,0 +1,151 @@
+---
+title: "Pipedrive"
+description: "Read deals, leads, contacts, activities, and reference data from Pipedrive"
+icon: "https://cdn.getgalaxy.io/sources/source-icon-pipedrive-dark.svg"
+---
+
+The Pipedrive source reads CRM records and the reference data needed to
+interpret them. It uses an
+[HTTP manifest](/pages/connectors/building-a-connector/http-manifests) and is
+**alpha**. It has been checked against Pipedrive's API reference and OpenAPI
+specifications and tested with mock responses, but has not yet been tested
+against a live account.
+
+## Configuration
+
+| Field | Scope | Default | Description |
+|---|---|---|---|
+| `api_token` | Connection | | Required. Secret. Personal API token. |
+| `host` | Connection | `https://api.pipedrive.com` | API host. Your company domain host is faster. |
+
+Find your token under your account name → **Company settings → Personal
+preferences → API**, or at `https://app.pipedrive.com/settings/api`. Each user
+has one active token per company. The token reads whatever that user can see in
+Pipedrive, so use a user with visibility of the records you want. If the API
+tab is missing, an admin must
+[enable API access](https://pipedrive.readme.io/docs/enabling-api-for-company-users).
+See [Pipedrive's authentication guide](https://pipedrive.readme.io/docs/core-api-concepts-authentication)
+for details.
+
+Pipedrive recommends `https://<company>.pipedrive.com` as the host so requests
+route straight to your data center. Your company domain is the subdomain you use
+to sign in. The default host works for every account.
+
+Connection testing makes one request to the users endpoint.
+
+## Resources
+
+| Resource | Endpoint | Modes |
+|---|---|---|
+| `users` | `GET /api/v1/users` | Full |
+| `deals` | `GET /api/v2/deals` | Full, incremental |
+| `deals_archived` | `GET /api/v2/deals/archived` | Full, incremental |
+| `persons` | `GET /api/v2/persons` | Full, incremental |
+| `organizations` | `GET /api/v2/organizations` | Full, incremental |
+| `activities` | `GET /api/v2/activities` | Full, incremental |
+| `leads` | `GET /api/v1/leads` | Full, incremental |
+| `leads_archived` | `GET /api/v1/leads/archived` | Full |
+| `notes` | `GET /api/v1/notes` | Full |
+| `products` | `GET /api/v2/products` | Full, incremental |
+| `pipelines` | `GET /api/v2/pipelines` | Full |
+| `stages` | `GET /api/v2/stages` | Full |
+| `deal_fields` | `GET /api/v2/dealFields` | Full |
+| `person_fields` | `GET /api/v2/personFields` | Full |
+| `organization_fields` | `GET /api/v2/organizationFields` | Full |
+| `activity_fields` | `GET /api/v2/activityFields` | Full |
+| `product_fields` | `GET /api/v2/productFields` | Full |
+| `activity_types` | `GET /api/v1/activityTypes` | Full |
+| `lead_labels` | `GET /api/v1/leadLabels` | Full |
+| `currencies` | `GET /api/v1/currencies` | Full |
+| `filters` | `GET /api/v1/filters` | Full |
+| `projects` | `GET /api/v2/projects` | Full |
+| `tasks` | `GET /api/v2/tasks` | Full |
+| `files` | `GET /api/v1/files` | Full |
+
+Selected by default: users, deals, persons, organizations, activities, leads,
+notes, pipelines, stages, the deal, person, and organization field definitions,
+activity types, and lead labels. The other resources are optional. Filament only
+writes the resources you select, and no resource depends on another.
+
+Each row is one Pipedrive record. Numeric IDs are `int64` columns. Lead and lead
+label IDs are UUID strings. Timestamps include time zones, optional fields are
+nullable, and the `raw` column keeps fields that aren't mapped to their own
+columns.
+
+**Custom fields.** Pipedrive names custom fields with 40-character keys. The v2
+endpoints return them in a `custom_fields` JSON column, keyed by that field key.
+Map a key to its label with the `field_code` and `field_name` columns of the
+matching field-definition resource. Leads come from the v1 API, which puts
+custom field keys at the top level of the record, so they stay in `raw`. Leads
+share deal custom fields. See
+[Pipedrive's custom field guide](https://pipedrive.readme.io/docs/core-api-concepts-custom-fields).
+
+**Deals** excludes deleted and archived deals, which matches Pipedrive's default
+listing. `deals_archived` reads archived deals with the same columns. `leads`
+also excludes archived leads. `leads_archived` reads those.
+
+**Activities** requests attendees alongside participants. **Notes** keep the
+HTML note body in `content`. The nested deal, person, organization, and user
+summaries stay in `raw`. **Files** rows are metadata and a download URL. File
+contents are not read. **Projects** and **tasks** use Pipedrive's Projects API.
+The tasks endpoint is marked beta by Pipedrive.
+
+Not included: mail threads and messages, the recents feed, per-record flow and
+changelog histories, search endpoints, deal products and installments (these
+need deal IDs on every request), organization relationships (one request per
+organization), call logs (limited to the token's own user), goals, roles and
+permission sets, and webhook configuration, which exposes HTTP auth
+credentials in the listing.
+
+## Modes
+
+Deals, archived deals, persons, organizations, activities, products, and leads
+support incremental reads on `update_time`. Each run sends the saved timestamp
+as `updated_since`, which Pipedrive applies inclusively, with a one-minute
+lookback by default. You can adjust the lookback, but the cursor field is fixed.
+Checkpoint keys are `<resource>_update_time` and use the `time` comparator.
+
+Incremental reads require every returned record to carry an `update_time`. A
+record without one fails the run rather than being skipped. Pipedrive's schema
+marks the field as optional for deals, persons, and organizations, but the
+product sets it on creation. Live validation of this is still pending.
+
+Incremental reads cannot detect deletions. Pipedrive keeps deleted records for
+30 days but the default listings omit them. Use **full replace** to remove rows
+that Pipedrive no longer returns, or **full upsert** to refresh rows in place.
+
+Notes are read in full. The v1 notes endpoint accepts `updated_since`, but its
+`update_time` values use Pipedrive's older `YYYY-MM-DD HH:MM:SS` format, which
+cannot be compared by the incremental engine. Archived leads have no update
+filter. Users, pipelines, stages, field definitions, activity types, lead
+labels, currencies, filters, projects, tasks, and files are read in full.
+
+## Behavior
+
+- **Auth**: every request sends the token in the `x-api-token` header. An empty
+  list can mean the token's user cannot see those records, not that the account
+  has none.
+- **Pagination**: v2 endpoints follow `additional_data.next_cursor` until it is
+  null, 500 records per page. Leads, notes, and files use v1 offset pagination
+  with `start` and `limit`, 100 per page, and stop after a short page. Users,
+  activity types, lead labels, currencies, and filters return everything in one
+  response.
+- **Recovery**: interrupted top-level reads can resume from a saved page cursor
+  or offset. If that request fails, the existing HTTP engine retries the resource
+  from the beginning.
+- **Rate limiting**: five requests per second, shared across resources in this
+  connection. Pipedrive's burst limit is per token and depends on the plan,
+  from 20 requests per 2 seconds on Lite to 120 on Ultimate. Pipedrive also
+  spends a daily token budget per company, 30,000 tokens times a plan
+  multiplier times the number of seats. A v2 list page costs 10 tokens and a
+  v1 list page costs 20. Filament retries throttled requests but does not track
+  the daily budget. See
+  [Pipedrive's rate limiting guide](https://pipedrive.readme.io/docs/core-api-concepts-rate-limiting).
+- **Timestamps**: v2 endpoints return RFC 3339 timestamps. v1 endpoints return
+  `YYYY-MM-DD HH:MM:SS` in UTC, which Filament reads as UTC.
+- **API versions**: deals, persons, organizations, activities, products,
+  pipelines, stages, and field definitions use Pipedrive's v2 endpoints.
+  Pipedrive
+  [stopped supporting the v1 versions](https://developers.pipedrive.com/changelog/post/deprecated-apiv1-endpoints-become-out-of-support)
+  of those on August 1, 2026. Leads, notes, users, and the remaining reference
+  tables have no v2 equivalent and use their supported v1 endpoints.
