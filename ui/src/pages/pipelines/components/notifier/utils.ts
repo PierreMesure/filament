@@ -4,7 +4,6 @@ import pluralize from "pluralize";
 import type { SelectInputOption } from "@galaxy-io/dls/inputs/SelectInput";
 
 import {
-  NotificationType,
   type Notifier,
   type NotifierInput,
   NotifierInputSchema,
@@ -62,7 +61,7 @@ export const mapPipelineNotifierStateToInput = (state: PipelineNotifierState): N
   const headers = parsePipelineNotifierHeaders(state.headers);
   return create(NotifierInputSchema, {
     name: state.name.trim(),
-    notificationType: NotificationType.WEBHOOK,
+    notificationType: state.notificationType,
     isEnabled: state.isEnabled,
     events: state.events,
     config: {
@@ -75,6 +74,7 @@ export const mapPipelineNotifierStateToInput = (state: PipelineNotifierState): N
 
 export const mapNotifierToPipelineNotifierState = (notifier: Notifier): PipelineNotifierState => ({
   name: notifier.name,
+  notificationType: notifier.notificationType,
   isEnabled: notifier.isEnabled,
   events: notifier.events,
   url: typeof notifier.config?.url === "string" ? notifier.config.url : "",

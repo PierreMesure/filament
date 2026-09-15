@@ -1,7 +1,7 @@
 import type { PinnedOptions } from "@galaxy-io/dls/inputs/MultiSelectInput";
 import type { SelectInputOption } from "@galaxy-io/dls/inputs/SelectInput";
 
-import { NotifierEvent } from "@/gen/ingestion/v1/notifiers_pb";
+import { NotificationType, NotifierEvent } from "@/gen/ingestion/v1/notifiers_pb";
 
 import type { PipelineNotifierState } from "@/pages/pipelines/components/notifier/types";
 
@@ -15,6 +15,24 @@ export const PIPELINE_NOTIFIER_HEADERS_PLACEHOLDER_TEXT = `{
 export const PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT = `{
   "Leave blank to keep current value": ""
 }`;
+
+export const PIPELINE_NOTIFIER_TYPE_TO_LABEL_MAP: Record<NotificationType, string> = {
+  [NotificationType.UNSPECIFIED]: "Unknown",
+  [NotificationType.WEBHOOK]: "Webhook",
+};
+
+export const PIPELINE_NOTIFIER_TYPES = Object.values(NotificationType).filter(
+  (type): type is NotificationType =>
+    typeof type === "number" && type !== NotificationType.UNSPECIFIED,
+);
+
+export const PIPELINE_NOTIFIER_TYPE_OPTIONS: SelectInputOption[] = PIPELINE_NOTIFIER_TYPES.map(
+  (type) => ({
+    id: String(type),
+    label: PIPELINE_NOTIFIER_TYPE_TO_LABEL_MAP[type],
+    value: type,
+  }),
+);
 
 export const PIPELINE_NOTIFIER_EVENT_TO_LABEL_MAP: Record<NotifierEvent, string> = {
   [NotifierEvent.UNSPECIFIED]: "Unknown",
@@ -47,6 +65,7 @@ export const PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION: PinnedOptions = {
 
 export const PIPELINE_NOTIFIER_DEFAULT_STATE: PipelineNotifierState = {
   name: "",
+  notificationType: NotificationType.WEBHOOK,
   isEnabled: true,
   events: [NotifierEvent.RUN_FAILED],
   url: "",
