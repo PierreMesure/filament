@@ -1,0 +1,134 @@
+import { create } from "@bufbuild/protobuf";
+import pluralize from "pluralize";
+
+import type { SelectInputOption } from "@galaxy-io/dls/inputs/SelectInput";
+
+import {
+  NotificationType,
+  type Notifier,
+  type NotifierInput,
+  NotifierInputSchema,
+  type WebhookNotifierDestination,
+  WebhookNotifierDestinationSchema,
+  WebhookNotifierInputSchema,
+} from "@/gen/ingestion/v1/notifiers_pb";
+
+import { isNameValid } from "@/pages/connectors/components/form/validation";
+import {
+  PIPELINE_NOTIFIER_DEFAULT_STATE,
+  PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY,
+  PIPELINE_NOTIFIER_EVENT_ALL,
+} from "@/pages/pipelines/components/notifier/constants";
+import {
+  PipelineNotifierEvent,
+  type PipelineNotifierState,
+  type PipelineNotifierTableRow,
+} from "@/pages/pipelines/components/notifier/types";
+
+const PIPELINE_NOTIFIER_EVENTS = Object.values(PipelineNotifierEvent);
+
+export const parsePipelineNotifierEvents = (
+  events: Notifier["events"],
+): PipelineNotifierEvent[] => {
+  if (events.includes(PIPELINE_NOTIFIER_EVENT_ALL)) return [...PIPELINE_NOTIFIER_EVENTS];
+  return PIPELINE_NOTIFIER_EVENTS.filter((event) => events.includes(event));
+};
+
+export const sortPipelineNotifierEvents = (
+  events: PipelineNotifierEvent[],
+): PipelineNotifierEvent[] => PIPELINE_NOTIFIER_EVENTS.filter((event) => events.includes(event));
+
+export const formatPipelineNotifierEventsSelection = (
+  selectedOptions: SelectInputOption[],
+  placeholder: string,
+): string => {
+  if (selectedOptions.length === 0) return placeholder;
+  if (selectedOptions.length === 1) return selectedOptions[0].label;
+  return pluralize("event", selectedOptions.length, true);
+};
+
+export const isPipelineNotifierUrlValid = (url: string): boolean => {
+  try {
+    const { protocol } = new URL(url.trim());
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+export const parsePipelineNotifierHeaders = (
+  text: string,
+): WebhookNotifierDestination["headers"] | null => {
+  if (text.trim() === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const headers = parsed as Record<string, unknown>;
+    return Object.values(headers).every((value) => typeof value === "string")
+      ? (headers as WebhookNotifierDestination["headers"])
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const isKeepingStoredDestination = (state: PipelineNotifierState): boolean =>
+  state.hasStoredDestination && state.url.trim() === "" && state.headers.trim() === "";
+
+export const isPipelineNotifierValid = (state: PipelineNotifierState): boolean =>
+  isNameValid(state.name) &&
+  state.events.length > 0 &&
+  (isKeepingStoredDestination(state) ||
+    (isPipelineNotifierUrlValid(state.url) &&
+      parsePipelineNotifierHeaders(state.headers) !== null));
+
+export const hasPipelineNotifierChanges = (
+  state: PipelineNotifierState,
+  initialState: PipelineNotifierState,
+): boolean =>
+  state.name.trim() !== initialState.name.trim() ||
+  sortPipelineNotifierEvents(state.events).join(",") !==
+    sortPipelineNotifierEvents(initialState.events).join(",") ||
+  state.url.trim() !== initialState.url.trim() ||
+  state.headers.trim() !== initialState.headers.trim();
+
+export const mapPipelineNotifierStateToInput = (state: PipelineNotifierState): NotifierInput =>
+  create(NotifierInputSchema, {
+    name: state.name.trim(),
+    notificationType: NotificationType.WEBHOOK,
+    isEnabled: state.isEnabled,
+    events: sortPipelineNotifierEvents(state.events),
+    resources: [],
+    channel: {
+      case: "webhook",
+      value: create(
+        WebhookNotifierInputSchema,
+        isKeepingStoredDestination(state)
+          ? {}
+          : {
+              destinationSource: {
+                case: "destination",
+                value: create(WebhookNotifierDestinationSchema, {
+                  url: state.url.trim(),
+                  headers: parsePipelineNotifierHeaders(state.headers) ?? {},
+                }),
+              },
+            },
+      ),
+    },
+  });
+
+export const mapNotifierToPipelineNotifierState = (notifier: Notifier): PipelineNotifierState => ({
+  ...PIPELINE_NOTIFIER_DEFAULT_STATE,
+  name: notifier.name,
+  isEnabled: notifier.isEnabled,
+  events: parsePipelineNotifierEvents(notifier.events),
+  hasStoredDestination: PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY in notifier.secretRefs,
+});
+
+export const mapNotifierToPipelineNotifierTableRow = (
+  notifier: Notifier,
+): PipelineNotifierTableRow => ({
+  id: notifier.id,
+  state: mapNotifierToPipelineNotifierState(notifier),
+});

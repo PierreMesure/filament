@@ -14,6 +14,7 @@ import {
   useCreatePipelineModalDispatch,
   useCreatePipelineModalState,
 } from "@/pages/pipelines/components/create/CreatePipelineModalProvider";
+import CreatePipelineModalDeliveryNotifications from "@/pages/pipelines/components/create/steps/components/CreatePipelineModalDeliveryNotifications";
 import CreatePipelineModalDeliverySink from "@/pages/pipelines/components/create/steps/components/CreatePipelineModalDeliverySink";
 import PipelineNodeConfigFields, {
   usePipelineNodeConfig,
@@ -161,6 +162,9 @@ const CreatePipelineModalDelivery = () => {
       )}
       <CreatePipelineModalDeliverySection header="Schedule">
         <CreatePipelineModalDeliverySchedule />
+      </CreatePipelineModalDeliverySection>
+      <CreatePipelineModalDeliverySection header="Notifications">
+        <CreatePipelineModalDeliveryNotifications />
       </CreatePipelineModalDeliverySection>
       <CreatePipelineModalDeliverySection header="Advanced">
         <CreatePipelineModalDeliveryAdvanced />
