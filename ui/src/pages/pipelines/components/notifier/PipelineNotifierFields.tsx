@@ -16,8 +16,6 @@ import {
   PIPELINE_NOTIFIER_EVENT_OPTIONS,
   PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT,
   PIPELINE_NOTIFIER_HEADERS_PLACEHOLDER_TEXT,
-  PIPELINE_NOTIFIER_INPUT_WIDTH,
-  PIPELINE_NOTIFIER_URL_KEEP_PLACEHOLDER_TEXT,
 } from "@/pages/pipelines/components/notifier/constants";
 import type {
   PipelineNotifierEvent,
@@ -28,6 +26,7 @@ import {
   isPipelineNotifierUrlValid,
   parsePipelineNotifierHeaders,
 } from "@/pages/pipelines/components/notifier/utils";
+import { PIPELINE_SETTINGS_INPUT_WIDTH } from "@/pages/pipelines/settings/constants";
 
 interface PipelineNotifierFieldsProps {
   state: PipelineNotifierState;
@@ -49,7 +48,7 @@ const PipelineNotifierFields = ({
       ? "Use a JSON object with string values"
       : undefined;
   const urlPlaceholder = state.hasStoredDestination
-    ? PIPELINE_NOTIFIER_URL_KEEP_PLACEHOLDER_TEXT
+    ? "Leave blank to keep current value"
     : "https://example.com/hooks/filament";
   const headersPlaceholder = state.hasStoredDestination
     ? PIPELINE_NOTIFIER_HEADERS_KEEP_PLACEHOLDER_TEXT
@@ -87,7 +86,7 @@ const PipelineNotifierFields = ({
           onChange={handleNameChange}
           placeholder="Webhook name"
           size={InputSize.LARGE}
-          width={PIPELINE_NOTIFIER_INPUT_WIDTH}
+          width={PIPELINE_SETTINGS_INPUT_WIDTH}
           isDisabled={isDisabled}
         />
       </FlexWrapper>
@@ -105,7 +104,7 @@ const PipelineNotifierFields = ({
           pinnedOptions={[PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION]}
           placeholder="Select events"
           size={InputSize.LARGE}
-          width={PIPELINE_NOTIFIER_INPUT_WIDTH}
+          width={PIPELINE_SETTINGS_INPUT_WIDTH}
           isDisabled={isDisabled}
         />
       </FlexWrapper>
@@ -121,7 +120,7 @@ const PipelineNotifierFields = ({
           error={urlError}
           placeholder={urlPlaceholder}
           size={InputSize.LARGE}
-          width={PIPELINE_NOTIFIER_INPUT_WIDTH}
+          width={PIPELINE_SETTINGS_INPUT_WIDTH}
           isDisabled={isDisabled}
         />
       </FlexWrapper>
@@ -131,7 +130,7 @@ const PipelineNotifierFields = ({
         fillWidth
       >
         <Text variant={TextVariant.SECONDARY}>Headers</Text>
-        <FlexWrapper direction={FlexDirection.COLUMN} gap={4} width={PIPELINE_NOTIFIER_INPUT_WIDTH}>
+        <FlexWrapper direction={FlexDirection.COLUMN} gap={4} width={PIPELINE_SETTINGS_INPUT_WIDTH}>
           <CodeEditor
             content={state.headers}
             onChange={handleHeadersChange}

@@ -13,10 +13,7 @@ import Widget from "@galaxy-io/dls/widget/Widget";
 
 import PipelineNotifierFields from "@/pages/pipelines/components/notifier/PipelineNotifierFields";
 import type { PipelineNotifierState } from "@/pages/pipelines/components/notifier/types";
-import {
-  hasPipelineNotifierChanges,
-  isPipelineNotifierValid,
-} from "@/pages/pipelines/components/notifier/utils";
+import { isPipelineNotifierValid } from "@/pages/pipelines/components/notifier/utils";
 
 interface PipelineNotifierFormProps {
   initialState: PipelineNotifierState;
@@ -43,8 +40,6 @@ const PipelineNotifierForm = ({
     onSave({ ...state, isEnabled: initialState.isEnabled });
   };
 
-  const canSave = isPipelineNotifierValid(state) && hasPipelineNotifierChanges(state, initialState);
-
   return (
     <FlexWrapper padding="12px" fillWidth>
       <Widget noHover padding="16px" fillWidth>
@@ -62,7 +57,7 @@ const PipelineNotifierForm = ({
                 variant={ButtonVariant.SECONDARY}
                 onClick={onDelete}
                 isDisabled={isSaving}
-                ariaLabel="Delete rule"
+                ariaLabel="Delete notifier"
               />
             )}
             <Button
@@ -71,7 +66,12 @@ const PipelineNotifierForm = ({
               onClick={onCancel}
               isDisabled={isSaving}
             />
-            <Button label="Save" onClick={handleSave} isDisabled={!canSave} isLoading={isSaving} />
+            <Button
+              label="Save"
+              onClick={handleSave}
+              isDisabled={!isPipelineNotifierValid(state)}
+              isLoading={isSaving}
+            />
           </FlexWrapper>
         </FlexWrapper>
       </Widget>

@@ -130,7 +130,7 @@ const CreatePipelineModalProvider = ({ children }: PropsWithChildren) => {
     const blockingHints = blockingMessages.length
       ? blockingMessages
       : state.step === CreatePipelineModalStep.DELIVERY && isScheduleValid && !isNotifiersValid
-        ? ["Complete the notification rules to continue"]
+        ? ["Complete the notifiers to continue"]
         : state.step === CreatePipelineModalStep.DELIVERY &&
             isScheduleValid &&
             workerConfigurationError

@@ -16,28 +16,19 @@ import {
 import { isNameValid } from "@/pages/connectors/components/form/validation";
 import {
   PIPELINE_NOTIFIER_ALL_EVENTS_PINNED_OPTION,
-  PIPELINE_NOTIFIER_DEFAULT_STATE,
   PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY,
   PIPELINE_NOTIFIER_EVENT_ALL,
+  PIPELINE_NOTIFIER_EVENTS,
 } from "@/pages/pipelines/components/notifier/constants";
-import {
+import type {
   PipelineNotifierEvent,
-  type PipelineNotifierState,
-  type PipelineNotifierTableRow,
+  PipelineNotifierState,
 } from "@/pages/pipelines/components/notifier/types";
 
-const PIPELINE_NOTIFIER_EVENTS = Object.values(PipelineNotifierEvent);
-
-export const parsePipelineNotifierEvents = (
-  events: Notifier["events"],
-): PipelineNotifierEvent[] => {
+export const parsePipelineNotifierEvents = (events: string[]): PipelineNotifierEvent[] => {
   if (events.includes(PIPELINE_NOTIFIER_EVENT_ALL)) return [...PIPELINE_NOTIFIER_EVENTS];
   return PIPELINE_NOTIFIER_EVENTS.filter((event) => events.includes(event));
 };
-
-export const sortPipelineNotifierEvents = (
-  events: PipelineNotifierEvent[],
-): PipelineNotifierEvent[] => PIPELINE_NOTIFIER_EVENTS.filter((event) => events.includes(event));
 
 export const formatPipelineNotifierEventsSelection = (
   selectedOptions: SelectInputOption[],
@@ -86,23 +77,12 @@ export const isPipelineNotifierValid = (state: PipelineNotifierState): boolean =
     (isPipelineNotifierUrlValid(state.url) &&
       parsePipelineNotifierHeaders(state.headers) !== null));
 
-export const hasPipelineNotifierChanges = (
-  state: PipelineNotifierState,
-  initialState: PipelineNotifierState,
-): boolean =>
-  state.name.trim() !== initialState.name.trim() ||
-  sortPipelineNotifierEvents(state.events).join(",") !==
-    sortPipelineNotifierEvents(initialState.events).join(",") ||
-  state.url.trim() !== initialState.url.trim() ||
-  state.headers.trim() !== initialState.headers.trim();
-
 export const mapPipelineNotifierStateToInput = (state: PipelineNotifierState): NotifierInput =>
   create(NotifierInputSchema, {
     name: state.name.trim(),
     notificationType: NotificationType.WEBHOOK,
     isEnabled: state.isEnabled,
-    events: sortPipelineNotifierEvents(state.events),
-    resources: [],
+    events: parsePipelineNotifierEvents(state.events),
     channel: {
       case: "webhook",
       value: create(
@@ -123,16 +103,10 @@ export const mapPipelineNotifierStateToInput = (state: PipelineNotifierState): N
   });
 
 export const mapNotifierToPipelineNotifierState = (notifier: Notifier): PipelineNotifierState => ({
-  ...PIPELINE_NOTIFIER_DEFAULT_STATE,
   name: notifier.name,
   isEnabled: notifier.isEnabled,
   events: parsePipelineNotifierEvents(notifier.events),
   hasStoredDestination: PIPELINE_NOTIFIER_DESTINATION_SECRET_REF_KEY in notifier.secretRefs,
-});
-
-export const mapNotifierToPipelineNotifierTableRow = (
-  notifier: Notifier,
-): PipelineNotifierTableRow => ({
-  id: notifier.id,
-  state: mapNotifierToPipelineNotifierState(notifier),
+  url: "",
+  headers: "",
 });

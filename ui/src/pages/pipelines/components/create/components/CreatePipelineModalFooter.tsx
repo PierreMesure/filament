@@ -24,7 +24,7 @@ import {
   mapCreatePipelineStateToRequest,
   mapCreatePipelineStateToVersionRequest,
 } from "@/pages/pipelines/components/create/serialize";
-import type { CreatePipelineModalNotifier } from "@/pages/pipelines/components/create/types";
+import type { PipelineNotifier } from "@/pages/pipelines/components/notifier/types";
 
 import { useCreatePipelineNotifierMutation } from "@/api/queries/notifiers";
 import { useCreatePipelineVersionMutation } from "@/api/queries/pipeline_versions";
@@ -51,7 +51,7 @@ const CreatePipelineModalFooter = () => {
 
   const { mutate: createPipeline } = useCreatePipelineMutation();
   const { mutate: createPipelineVersion } = useCreatePipelineVersionMutation();
-  const { mutate: createPipelineNotifier } = useCreatePipelineNotifierMutation();
+  const { mutateAsync: createPipelineNotifier } = useCreatePipelineNotifierMutation();
 
   const { isBackVisible, isLastStep, isNextDisabled, isSubmitting, hints } = state;
 
@@ -59,24 +59,20 @@ const CreatePipelineModalFooter = () => {
     void navigate({ to: "/pipelines/$id/canvas", params: { id: pipelineId } });
   };
 
-  const handleFinish = (pipelineId: Pipeline["id"], notifiers: CreatePipelineModalNotifier[]) => {
-    const [notifier, ...remaining] = notifiers;
-    if (!notifier) {
-      handleNavigateToCanvas(pipelineId);
-      return;
-    }
-
-    createPipelineNotifier(mapCreatePipelineNotifierToRequest(notifier, pipelineId), {
-      onSuccess: () => handleFinish(pipelineId, remaining),
-      onError: (error) => {
+  const handleFinish = async (pipelineId: Pipeline["id"], notifiers: PipelineNotifier[]) => {
+    for (const notifier of notifiers) {
+      try {
+        await createPipelineNotifier(mapCreatePipelineNotifierToRequest(notifier, pipelineId));
+      } catch (error) {
         showToast({
           variant: ToastVariant.ERROR,
-          header: "Pipeline created without all notifications",
-          subheader: getErrorMessage(error, `Failed to add notification rule ${notifier.name}`),
+          header: "Pipeline created without all notifiers",
+          subheader: getErrorMessage(error, `Failed to add notifier ${notifier.name}`),
         });
-        handleNavigateToCanvas(pipelineId);
-      },
-    });
+        break;
+      }
+    }
+    handleNavigateToCanvas(pipelineId);
   };
 
   const handleCreate = () => {
@@ -106,7 +102,7 @@ const CreatePipelineModalFooter = () => {
               header: "Pipeline created",
               subheader: "Your pipeline has been created successfully.",
             });
-            handleFinish(pipelineId, state.notifiers);
+            void handleFinish(pipelineId, state.notifiers);
           },
           onError: (error) => {
             showToast({
@@ -114,7 +110,7 @@ const CreatePipelineModalFooter = () => {
               header: "Pipeline created without connections",
               subheader: getErrorMessage(error, "Failed to add connections"),
             });
-            handleFinish(pipelineId, state.notifiers);
+            void handleFinish(pipelineId, state.notifiers);
           },
         });
       },

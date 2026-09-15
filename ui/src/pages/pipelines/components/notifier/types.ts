@@ -15,11 +15,6 @@ export interface PipelineNotifierState {
   headers: string;
 }
 
-export interface PipelineNotifierTableRow {
+export interface PipelineNotifier extends PipelineNotifierState {
   id: Notifier["id"];
-  state: PipelineNotifierState;
-}
-
-export interface PipelineNotifierSaveCallbacks {
-  onSuccess: () => void;
 }

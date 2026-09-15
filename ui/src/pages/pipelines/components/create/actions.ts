@@ -3,12 +3,12 @@ import type { Connection } from "@/gen/ingestion/v1/connections_pb";
 import type { Resource, ResourceColumn } from "@/gen/ingestion/v1/connectors_pb";
 import type { Pipeline } from "@/gen/ingestion/v1/pipelines_pb";
 
-import type {
-  CreatePipelineModalNotifier,
-  CreatePipelineModalStep,
-} from "@/pages/pipelines/components/create/types";
+import type { CreatePipelineModalStep } from "@/pages/pipelines/components/create/types";
 import type { PipelineNodeConfig } from "@/pages/pipelines/components/node/PipelineNodeConfigFields";
-import type { PipelineNotifierState } from "@/pages/pipelines/components/notifier/types";
+import type {
+  PipelineNotifier,
+  PipelineNotifierState,
+} from "@/pages/pipelines/components/notifier/types";
 import type { PipelineSettingsPageScheduleState } from "@/pages/pipelines/settings/types";
 
 export enum CreatePipelineModalActionType {
@@ -104,17 +104,17 @@ export interface SetScheduleAction {
 
 export interface AddNotifierAction {
   type: CreatePipelineModalActionType.ADD_NOTIFIER;
-  payload: CreatePipelineModalNotifier;
+  payload: PipelineNotifier;
 }
 
 export interface UpdateNotifierAction {
   type: CreatePipelineModalActionType.UPDATE_NOTIFIER;
-  payload: { id: CreatePipelineModalNotifier["id"]; partial: Partial<PipelineNotifierState> };
+  payload: { id: PipelineNotifier["id"]; partial: Partial<PipelineNotifierState> };
 }
 
 export interface RemoveNotifierAction {
   type: CreatePipelineModalActionType.REMOVE_NOTIFIER;
-  payload: CreatePipelineModalNotifier["id"];
+  payload: PipelineNotifier["id"];
 }
 
 export interface SetWorkerConfigurationAction {
