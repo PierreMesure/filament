@@ -32,7 +32,7 @@ func (m *Module) report(ctx context.Context, a attempt) {
 		err = events.Emit(ctx, m.bus, events.NotifierAttempted, events.Envelope{
 			Tenant: n.Tenant, Run: n.Run, Resource: n.Resource, At: a.completedAt,
 		}, events.NotifierAttemptedEvent{
-			NotifierID: n.NotifierID, NotifierVersion: n.NotifierVersion, NotificationType: kind,
+			NotifierID: n.NotifierID, NotificationType: kind,
 			PipelineID: n.PipelineID, PipelineVersionID: n.PipelineVersionID,
 			DeliveryID: n.DeliveryID, AttemptID: n.AttemptID,
 			TriggerType: n.TriggerType, TriggerStreamSequence: n.TriggerStreamSequence,

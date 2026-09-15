@@ -37,7 +37,6 @@ type Notifier struct {
 	Resources        string
 	Config           string
 	SecretRefs       string
-	Version          int64
 	IsDeleted        int64
 	DeletedAt        sql.NullInt64
 	CreatedByUserID  sql.NullString

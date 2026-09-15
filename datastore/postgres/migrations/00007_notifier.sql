@@ -12,7 +12,6 @@ CREATE TABLE notifier (
   resources            JSONB             NOT NULL DEFAULT '[]',
   config               JSONB             NOT NULL DEFAULT '{}',
   secret_refs          JSONB             NOT NULL DEFAULT '{}',
-  version              BIGINT            NOT NULL DEFAULT 1,
   is_deleted           BOOLEAN           NOT NULL DEFAULT false,
   deleted_at           TIMESTAMPTZ,
   created_by_user_id   UUID              REFERENCES users (id) ON DELETE SET NULL,

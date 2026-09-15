@@ -9,6 +9,7 @@ package ingestionv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -69,7 +70,71 @@ func (NotificationType) EnumDescriptor() ([]byte, []int) {
 	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{0}
 }
 
-// Notifier contains settings and secret references, never destination values.
+// NotifierEvent identifies an event kind a notifier can deliver. Unspecified is
+// an input sentinel and cannot be persisted.
+type NotifierEvent int32
+
+const (
+	NotifierEvent_NOTIFIER_EVENT_UNSPECIFIED   NotifierEvent = 0
+	NotifierEvent_NOTIFIER_EVENT_RUN_STARTED   NotifierEvent = 1
+	NotifierEvent_NOTIFIER_EVENT_RUN_COMPLETED NotifierEvent = 2
+	NotifierEvent_NOTIFIER_EVENT_RUN_FAILED    NotifierEvent = 3
+	NotifierEvent_NOTIFIER_EVENT_RUN_PARTIAL   NotifierEvent = 4
+	NotifierEvent_NOTIFIER_EVENT_RUN_CANCELED  NotifierEvent = 5
+	NotifierEvent_NOTIFIER_EVENT_RUN_PAUSED    NotifierEvent = 6
+)
+
+// Enum value maps for NotifierEvent.
+var (
+	NotifierEvent_name = map[int32]string{
+		0: "NOTIFIER_EVENT_UNSPECIFIED",
+		1: "NOTIFIER_EVENT_RUN_STARTED",
+		2: "NOTIFIER_EVENT_RUN_COMPLETED",
+		3: "NOTIFIER_EVENT_RUN_FAILED",
+		4: "NOTIFIER_EVENT_RUN_PARTIAL",
+		5: "NOTIFIER_EVENT_RUN_CANCELED",
+		6: "NOTIFIER_EVENT_RUN_PAUSED",
+	}
+	NotifierEvent_value = map[string]int32{
+		"NOTIFIER_EVENT_UNSPECIFIED":   0,
+		"NOTIFIER_EVENT_RUN_STARTED":   1,
+		"NOTIFIER_EVENT_RUN_COMPLETED": 2,
+		"NOTIFIER_EVENT_RUN_FAILED":    3,
+		"NOTIFIER_EVENT_RUN_PARTIAL":   4,
+		"NOTIFIER_EVENT_RUN_CANCELED":  5,
+		"NOTIFIER_EVENT_RUN_PAUSED":    6,
+	}
+)
+
+func (x NotifierEvent) Enum() *NotifierEvent {
+	p := new(NotifierEvent)
+	*p = x
+	return p
+}
+
+func (x NotifierEvent) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (NotifierEvent) Descriptor() protoreflect.EnumDescriptor {
+	return file_ingestion_v1_notifiers_proto_enumTypes[1].Descriptor()
+}
+
+func (NotifierEvent) Type() protoreflect.EnumType {
+	return &file_ingestion_v1_notifiers_proto_enumTypes[1]
+}
+
+func (x NotifierEvent) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use NotifierEvent.Descriptor instead.
+func (NotifierEvent) EnumDescriptor() ([]byte, []int) {
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{1}
+}
+
+// Notifier holds settings, plain config, and secret references, never secret
+// values. Webhook config carries url; secret_refs carries headers.
 type Notifier struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -78,10 +143,10 @@ type Notifier struct {
 	Name             string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	NotificationType NotificationType       `protobuf:"varint,5,opt,name=notification_type,json=notificationType,proto3,enum=ingestion.v1.NotificationType" json:"notification_type,omitempty"`
 	IsEnabled        bool                   `protobuf:"varint,6,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
-	Events           []string               `protobuf:"bytes,7,rep,name=events,proto3" json:"events,omitempty"`
+	Events           []NotifierEvent        `protobuf:"varint,7,rep,packed,name=events,proto3,enum=ingestion.v1.NotifierEvent" json:"events,omitempty"`
 	Resources        []string               `protobuf:"bytes,8,rep,name=resources,proto3" json:"resources,omitempty"`
-	SecretRefs       map[string]string      `protobuf:"bytes,9,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Version          int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
+	Config           *structpb.Struct       `protobuf:"bytes,9,opt,name=config,proto3" json:"config,omitempty"`
+	SecretRefs       map[string]string      `protobuf:"bytes,10,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CreatedAt        int64                  `protobuf:"varint,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt        int64                  `protobuf:"varint,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	DeletedAt        int64                  `protobuf:"varint,13,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
@@ -164,7 +229,7 @@ func (x *Notifier) GetIsEnabled() bool {
 	return false
 }
 
-func (x *Notifier) GetEvents() []string {
+func (x *Notifier) GetEvents() []NotifierEvent {
 	if x != nil {
 		return x.Events
 	}
@@ -178,18 +243,18 @@ func (x *Notifier) GetResources() []string {
 	return nil
 }
 
+func (x *Notifier) GetConfig() *structpb.Struct {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
 func (x *Notifier) GetSecretRefs() map[string]string {
 	if x != nil {
 		return x.SecretRefs
 	}
 	return nil
-}
-
-func (x *Notifier) GetVersion() int64 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
 }
 
 func (x *Notifier) GetCreatedAt() int64 {
@@ -234,21 +299,20 @@ func (x *Notifier) GetDeletedByUserId() string {
 	return ""
 }
 
-// NotifierInput replaces the rule's settings. An omitted destination on update
-// keeps the existing secret reference.
+// NotifierInput replaces the rule's settings. Secret fields in config are
+// extracted and stored as secrets; on update, an omitted secret field keeps
+// the reference echoed in secret_refs.
 type NotifierInput struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	NotificationType NotificationType       `protobuf:"varint,2,opt,name=notification_type,json=notificationType,proto3,enum=ingestion.v1.NotificationType" json:"notification_type,omitempty"`
 	IsEnabled        bool                   `protobuf:"varint,3,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
-	Events           []string               `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`       // Registered event names, or ["*"].
+	Events           []NotifierEvent        `protobuf:"varint,4,rep,packed,name=events,proto3,enum=ingestion.v1.NotifierEvent" json:"events,omitempty"`
 	Resources        []string               `protobuf:"bytes,5,rep,name=resources,proto3" json:"resources,omitempty"` // Empty matches any resource.
-	// Types that are valid to be assigned to Channel:
-	//
-	//	*NotifierInput_Webhook
-	Channel       isNotifierInput_Channel `protobuf_oneof:"channel"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Config           *structpb.Struct       `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
+	SecretRefs       map[string]string      `protobuf:"bytes,7,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *NotifierInput) Reset() {
@@ -302,7 +366,7 @@ func (x *NotifierInput) GetIsEnabled() bool {
 	return false
 }
 
-func (x *NotifierInput) GetEvents() []string {
+func (x *NotifierInput) GetEvents() []NotifierEvent {
 	if x != nil {
 		return x.Events
 	}
@@ -316,163 +380,16 @@ func (x *NotifierInput) GetResources() []string {
 	return nil
 }
 
-func (x *NotifierInput) GetChannel() isNotifierInput_Channel {
+func (x *NotifierInput) GetConfig() *structpb.Struct {
 	if x != nil {
-		return x.Channel
+		return x.Config
 	}
 	return nil
 }
 
-func (x *NotifierInput) GetWebhook() *WebhookNotifierInput {
+func (x *NotifierInput) GetSecretRefs() map[string]string {
 	if x != nil {
-		if x, ok := x.Channel.(*NotifierInput_Webhook); ok {
-			return x.Webhook
-		}
-	}
-	return nil
-}
-
-type isNotifierInput_Channel interface {
-	isNotifierInput_Channel()
-}
-
-type NotifierInput_Webhook struct {
-	Webhook *WebhookNotifierInput `protobuf:"bytes,6,opt,name=webhook,proto3,oneof"`
-}
-
-func (*NotifierInput_Webhook) isNotifierInput_Channel() {}
-
-type WebhookNotifierInput struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to DestinationSource:
-	//
-	//	*WebhookNotifierInput_Destination
-	//	*WebhookNotifierInput_DestinationSecretRef
-	DestinationSource isWebhookNotifierInput_DestinationSource `protobuf_oneof:"destination_source"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *WebhookNotifierInput) Reset() {
-	*x = WebhookNotifierInput{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebhookNotifierInput) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebhookNotifierInput) ProtoMessage() {}
-
-func (x *WebhookNotifierInput) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebhookNotifierInput.ProtoReflect.Descriptor instead.
-func (*WebhookNotifierInput) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *WebhookNotifierInput) GetDestinationSource() isWebhookNotifierInput_DestinationSource {
-	if x != nil {
-		return x.DestinationSource
-	}
-	return nil
-}
-
-func (x *WebhookNotifierInput) GetDestination() *WebhookNotifierDestination {
-	if x != nil {
-		if x, ok := x.DestinationSource.(*WebhookNotifierInput_Destination); ok {
-			return x.Destination
-		}
-	}
-	return nil
-}
-
-func (x *WebhookNotifierInput) GetDestinationSecretRef() string {
-	if x != nil {
-		if x, ok := x.DestinationSource.(*WebhookNotifierInput_DestinationSecretRef); ok {
-			return x.DestinationSecretRef
-		}
-	}
-	return ""
-}
-
-type isWebhookNotifierInput_DestinationSource interface {
-	isWebhookNotifierInput_DestinationSource()
-}
-
-type WebhookNotifierInput_Destination struct {
-	Destination *WebhookNotifierDestination `protobuf:"bytes,1,opt,name=destination,proto3,oneof"`
-}
-
-type WebhookNotifierInput_DestinationSecretRef struct {
-	DestinationSecretRef string `protobuf:"bytes,2,opt,name=destination_secret_ref,json=destinationSecretRef,proto3,oneof"`
-}
-
-func (*WebhookNotifierInput_Destination) isWebhookNotifierInput_DestinationSource() {}
-
-func (*WebhookNotifierInput_DestinationSecretRef) isWebhookNotifierInput_DestinationSource() {}
-
-// WebhookNotifierDestination is stored as a single secret and is never returned.
-type WebhookNotifierDestination struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	Headers       map[string]string      `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WebhookNotifierDestination) Reset() {
-	*x = WebhookNotifierDestination{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WebhookNotifierDestination) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WebhookNotifierDestination) ProtoMessage() {}
-
-func (x *WebhookNotifierDestination) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WebhookNotifierDestination.ProtoReflect.Descriptor instead.
-func (*WebhookNotifierDestination) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *WebhookNotifierDestination) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *WebhookNotifierDestination) GetHeaders() map[string]string {
-	if x != nil {
-		return x.Headers
+		return x.SecretRefs
 	}
 	return nil
 }
@@ -487,7 +404,7 @@ type CreatePipelineNotifierRequest struct {
 
 func (x *CreatePipelineNotifierRequest) Reset() {
 	*x = CreatePipelineNotifierRequest{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[4]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +416,7 @@ func (x *CreatePipelineNotifierRequest) String() string {
 func (*CreatePipelineNotifierRequest) ProtoMessage() {}
 
 func (x *CreatePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[4]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,7 +429,7 @@ func (x *CreatePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePipelineNotifierRequest.ProtoReflect.Descriptor instead.
 func (*CreatePipelineNotifierRequest) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{4}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreatePipelineNotifierRequest) GetPipelineId() string {
@@ -538,7 +455,7 @@ type CreatePipelineNotifierResponse struct {
 
 func (x *CreatePipelineNotifierResponse) Reset() {
 	*x = CreatePipelineNotifierResponse{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[5]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +467,7 @@ func (x *CreatePipelineNotifierResponse) String() string {
 func (*CreatePipelineNotifierResponse) ProtoMessage() {}
 
 func (x *CreatePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[5]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +480,7 @@ func (x *CreatePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePipelineNotifierResponse.ProtoReflect.Descriptor instead.
 func (*CreatePipelineNotifierResponse) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{5}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreatePipelineNotifierResponse) GetNotifier() *Notifier {
@@ -577,15 +494,14 @@ type UpdatePipelineNotifierRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	NotifierId    string                 `protobuf:"bytes,2,opt,name=notifier_id,json=notifierId,proto3" json:"notifier_id,omitempty"`
-	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	Notifier      *NotifierInput         `protobuf:"bytes,4,opt,name=notifier,proto3" json:"notifier,omitempty"`
+	Notifier      *NotifierInput         `protobuf:"bytes,3,opt,name=notifier,proto3" json:"notifier,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdatePipelineNotifierRequest) Reset() {
 	*x = UpdatePipelineNotifierRequest{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[6]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +513,7 @@ func (x *UpdatePipelineNotifierRequest) String() string {
 func (*UpdatePipelineNotifierRequest) ProtoMessage() {}
 
 func (x *UpdatePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[6]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +526,7 @@ func (x *UpdatePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePipelineNotifierRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePipelineNotifierRequest) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{6}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdatePipelineNotifierRequest) GetPipelineId() string {
@@ -625,13 +541,6 @@ func (x *UpdatePipelineNotifierRequest) GetNotifierId() string {
 		return x.NotifierId
 	}
 	return ""
-}
-
-func (x *UpdatePipelineNotifierRequest) GetVersion() int64 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
 }
 
 func (x *UpdatePipelineNotifierRequest) GetNotifier() *NotifierInput {
@@ -650,7 +559,7 @@ type UpdatePipelineNotifierResponse struct {
 
 func (x *UpdatePipelineNotifierResponse) Reset() {
 	*x = UpdatePipelineNotifierResponse{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[7]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +571,7 @@ func (x *UpdatePipelineNotifierResponse) String() string {
 func (*UpdatePipelineNotifierResponse) ProtoMessage() {}
 
 func (x *UpdatePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[7]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +584,7 @@ func (x *UpdatePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePipelineNotifierResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePipelineNotifierResponse) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{7}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UpdatePipelineNotifierResponse) GetNotifier() *Notifier {
@@ -694,7 +603,7 @@ type ListPipelineNotifiersRequest struct {
 
 func (x *ListPipelineNotifiersRequest) Reset() {
 	*x = ListPipelineNotifiersRequest{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[8]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +615,7 @@ func (x *ListPipelineNotifiersRequest) String() string {
 func (*ListPipelineNotifiersRequest) ProtoMessage() {}
 
 func (x *ListPipelineNotifiersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[8]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +628,7 @@ func (x *ListPipelineNotifiersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPipelineNotifiersRequest.ProtoReflect.Descriptor instead.
 func (*ListPipelineNotifiersRequest) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{8}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListPipelineNotifiersRequest) GetPipelineId() string {
@@ -738,7 +647,7 @@ type ListPipelineNotifiersResponse struct {
 
 func (x *ListPipelineNotifiersResponse) Reset() {
 	*x = ListPipelineNotifiersResponse{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[9]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +659,7 @@ func (x *ListPipelineNotifiersResponse) String() string {
 func (*ListPipelineNotifiersResponse) ProtoMessage() {}
 
 func (x *ListPipelineNotifiersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[9]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +672,7 @@ func (x *ListPipelineNotifiersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPipelineNotifiersResponse.ProtoReflect.Descriptor instead.
 func (*ListPipelineNotifiersResponse) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{9}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListPipelineNotifiersResponse) GetNotifiers() []*Notifier {
@@ -777,14 +686,13 @@ type DeletePipelineNotifierRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PipelineId    string                 `protobuf:"bytes,1,opt,name=pipeline_id,json=pipelineId,proto3" json:"pipeline_id,omitempty"`
 	NotifierId    string                 `protobuf:"bytes,2,opt,name=notifier_id,json=notifierId,proto3" json:"notifier_id,omitempty"`
-	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeletePipelineNotifierRequest) Reset() {
 	*x = DeletePipelineNotifierRequest{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[10]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -796,7 +704,7 @@ func (x *DeletePipelineNotifierRequest) String() string {
 func (*DeletePipelineNotifierRequest) ProtoMessage() {}
 
 func (x *DeletePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[10]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -809,7 +717,7 @@ func (x *DeletePipelineNotifierRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePipelineNotifierRequest.ProtoReflect.Descriptor instead.
 func (*DeletePipelineNotifierRequest) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{10}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeletePipelineNotifierRequest) GetPipelineId() string {
@@ -826,13 +734,6 @@ func (x *DeletePipelineNotifierRequest) GetNotifierId() string {
 	return ""
 }
 
-func (x *DeletePipelineNotifierRequest) GetVersion() int64 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
 type DeletePipelineNotifierResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -841,7 +742,7 @@ type DeletePipelineNotifierResponse struct {
 
 func (x *DeletePipelineNotifierResponse) Reset() {
 	*x = DeletePipelineNotifierResponse{}
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[11]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +754,7 @@ func (x *DeletePipelineNotifierResponse) String() string {
 func (*DeletePipelineNotifierResponse) ProtoMessage() {}
 
 func (x *DeletePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ingestion_v1_notifiers_proto_msgTypes[11]
+	mi := &file_ingestion_v1_notifiers_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,14 +767,14 @@ func (x *DeletePipelineNotifierResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePipelineNotifierResponse.ProtoReflect.Descriptor instead.
 func (*DeletePipelineNotifierResponse) Descriptor() ([]byte, []int) {
-	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{11}
+	return file_ingestion_v1_notifiers_proto_rawDescGZIP(), []int{9}
 }
 
 var File_ingestion_v1_notifiers_proto protoreflect.FileDescriptor
 
 const file_ingestion_v1_notifiers_proto_rawDesc = "" +
 	"\n" +
-	"\x1cingestion/v1/notifiers.proto\x12\fingestion.v1\"\x94\x05\n" +
+	"\x1cingestion/v1/notifiers.proto\x12\fingestion.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xc8\x05\n" +
 	"\bNotifier\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1f\n" +
@@ -882,13 +783,13 @@ const file_ingestion_v1_notifiers_proto_rawDesc = "" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12K\n" +
 	"\x11notification_type\x18\x05 \x01(\x0e2\x1e.ingestion.v1.NotificationTypeR\x10notificationType\x12\x1d\n" +
 	"\n" +
-	"is_enabled\x18\x06 \x01(\bR\tisEnabled\x12\x16\n" +
-	"\x06events\x18\a \x03(\tR\x06events\x12\x1c\n" +
-	"\tresources\x18\b \x03(\tR\tresources\x12G\n" +
-	"\vsecret_refs\x18\t \x03(\v2&.ingestion.v1.Notifier.SecretRefsEntryR\n" +
-	"secretRefs\x12\x18\n" +
-	"\aversion\x18\n" +
-	" \x01(\x03R\aversion\x12\x1d\n" +
+	"is_enabled\x18\x06 \x01(\bR\tisEnabled\x123\n" +
+	"\x06events\x18\a \x03(\x0e2\x1b.ingestion.v1.NotifierEventR\x06events\x12\x1c\n" +
+	"\tresources\x18\b \x03(\tR\tresources\x12/\n" +
+	"\x06config\x18\t \x01(\v2\x17.google.protobuf.StructR\x06config\x12G\n" +
+	"\vsecret_refs\x18\n" +
+	" \x03(\v2&.ingestion.v1.Notifier.SecretRefsEntryR\n" +
+	"secretRefs\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\v \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
@@ -900,24 +801,18 @@ const file_ingestion_v1_notifiers_proto_rawDesc = "" +
 	"\x12deleted_by_user_id\x18\x10 \x01(\tR\x0fdeletedByUserId\x1a=\n" +
 	"\x0fSecretRefsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa0\x03\n" +
 	"\rNotifierInput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12K\n" +
 	"\x11notification_type\x18\x02 \x01(\x0e2\x1e.ingestion.v1.NotificationTypeR\x10notificationType\x12\x1d\n" +
 	"\n" +
-	"is_enabled\x18\x03 \x01(\bR\tisEnabled\x12\x16\n" +
-	"\x06events\x18\x04 \x03(\tR\x06events\x12\x1c\n" +
-	"\tresources\x18\x05 \x03(\tR\tresources\x12>\n" +
-	"\awebhook\x18\x06 \x01(\v2\".ingestion.v1.WebhookNotifierInputH\x00R\awebhookB\t\n" +
-	"\achannel\"\xb2\x01\n" +
-	"\x14WebhookNotifierInput\x12L\n" +
-	"\vdestination\x18\x01 \x01(\v2(.ingestion.v1.WebhookNotifierDestinationH\x00R\vdestination\x126\n" +
-	"\x16destination_secret_ref\x18\x02 \x01(\tH\x00R\x14destinationSecretRefB\x14\n" +
-	"\x12destination_source\"\xbb\x01\n" +
-	"\x1aWebhookNotifierDestination\x12\x10\n" +
-	"\x03url\x18\x01 \x01(\tR\x03url\x12O\n" +
-	"\aheaders\x18\x02 \x03(\v25.ingestion.v1.WebhookNotifierDestination.HeadersEntryR\aheaders\x1a:\n" +
-	"\fHeadersEntry\x12\x10\n" +
+	"is_enabled\x18\x03 \x01(\bR\tisEnabled\x123\n" +
+	"\x06events\x18\x04 \x03(\x0e2\x1b.ingestion.v1.NotifierEventR\x06events\x12\x1c\n" +
+	"\tresources\x18\x05 \x03(\tR\tresources\x12/\n" +
+	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x12L\n" +
+	"\vsecret_refs\x18\a \x03(\v2+.ingestion.v1.NotifierInput.SecretRefsEntryR\n" +
+	"secretRefs\x1a=\n" +
+	"\x0fSecretRefsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"y\n" +
 	"\x1dCreatePipelineNotifierRequest\x12\x1f\n" +
@@ -925,31 +820,37 @@ const file_ingestion_v1_notifiers_proto_rawDesc = "" +
 	"pipelineId\x127\n" +
 	"\bnotifier\x18\x02 \x01(\v2\x1b.ingestion.v1.NotifierInputR\bnotifier\"T\n" +
 	"\x1eCreatePipelineNotifierResponse\x122\n" +
-	"\bnotifier\x18\x01 \x01(\v2\x16.ingestion.v1.NotifierR\bnotifier\"\xb4\x01\n" +
+	"\bnotifier\x18\x01 \x01(\v2\x16.ingestion.v1.NotifierR\bnotifier\"\x9a\x01\n" +
 	"\x1dUpdatePipelineNotifierRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x1f\n" +
 	"\vnotifier_id\x18\x02 \x01(\tR\n" +
-	"notifierId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x03R\aversion\x127\n" +
-	"\bnotifier\x18\x04 \x01(\v2\x1b.ingestion.v1.NotifierInputR\bnotifier\"T\n" +
+	"notifierId\x127\n" +
+	"\bnotifier\x18\x03 \x01(\v2\x1b.ingestion.v1.NotifierInputR\bnotifier\"T\n" +
 	"\x1eUpdatePipelineNotifierResponse\x122\n" +
 	"\bnotifier\x18\x01 \x01(\v2\x16.ingestion.v1.NotifierR\bnotifier\"?\n" +
 	"\x1cListPipelineNotifiersRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\"U\n" +
 	"\x1dListPipelineNotifiersResponse\x124\n" +
-	"\tnotifiers\x18\x01 \x03(\v2\x16.ingestion.v1.NotifierR\tnotifiers\"{\n" +
+	"\tnotifiers\x18\x01 \x03(\v2\x16.ingestion.v1.NotifierR\tnotifiers\"a\n" +
 	"\x1dDeletePipelineNotifierRequest\x12\x1f\n" +
 	"\vpipeline_id\x18\x01 \x01(\tR\n" +
 	"pipelineId\x12\x1f\n" +
 	"\vnotifier_id\x18\x02 \x01(\tR\n" +
-	"notifierId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x03R\aversion\" \n" +
+	"notifierId\" \n" +
 	"\x1eDeletePipelineNotifierResponse*T\n" +
 	"\x10NotificationType\x12!\n" +
 	"\x1dNOTIFICATION_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19NOTIFICATION_TYPE_WEBHOOK\x10\x01B\xaf\x01\n" +
+	"\x19NOTIFICATION_TYPE_WEBHOOK\x10\x01*\xf0\x01\n" +
+	"\rNotifierEvent\x12\x1e\n" +
+	"\x1aNOTIFIER_EVENT_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aNOTIFIER_EVENT_RUN_STARTED\x10\x01\x12 \n" +
+	"\x1cNOTIFIER_EVENT_RUN_COMPLETED\x10\x02\x12\x1d\n" +
+	"\x19NOTIFIER_EVENT_RUN_FAILED\x10\x03\x12\x1e\n" +
+	"\x1aNOTIFIER_EVENT_RUN_PARTIAL\x10\x04\x12\x1f\n" +
+	"\x1bNOTIFIER_EVENT_RUN_CANCELED\x10\x05\x12\x1d\n" +
+	"\x19NOTIFIER_EVENT_RUN_PAUSED\x10\x06B\xaf\x01\n" +
 	"\x10com.ingestion.v1B\x0eNotifiersProtoP\x01Z:github.com/galaxy-io/filament/api/ingestion/v1;ingestionv1\xa2\x02\x03IXX\xaa\x02\fIngestion.V1\xca\x02\fIngestion\\V1\xe2\x02\x18Ingestion\\V1\\GPBMetadata\xea\x02\rIngestion::V1b\x06proto3"
 
 var (
@@ -964,42 +865,44 @@ func file_ingestion_v1_notifiers_proto_rawDescGZIP() []byte {
 	return file_ingestion_v1_notifiers_proto_rawDescData
 }
 
-var file_ingestion_v1_notifiers_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ingestion_v1_notifiers_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_ingestion_v1_notifiers_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_ingestion_v1_notifiers_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_ingestion_v1_notifiers_proto_goTypes = []any{
 	(NotificationType)(0),                  // 0: ingestion.v1.NotificationType
-	(*Notifier)(nil),                       // 1: ingestion.v1.Notifier
-	(*NotifierInput)(nil),                  // 2: ingestion.v1.NotifierInput
-	(*WebhookNotifierInput)(nil),           // 3: ingestion.v1.WebhookNotifierInput
-	(*WebhookNotifierDestination)(nil),     // 4: ingestion.v1.WebhookNotifierDestination
-	(*CreatePipelineNotifierRequest)(nil),  // 5: ingestion.v1.CreatePipelineNotifierRequest
-	(*CreatePipelineNotifierResponse)(nil), // 6: ingestion.v1.CreatePipelineNotifierResponse
-	(*UpdatePipelineNotifierRequest)(nil),  // 7: ingestion.v1.UpdatePipelineNotifierRequest
-	(*UpdatePipelineNotifierResponse)(nil), // 8: ingestion.v1.UpdatePipelineNotifierResponse
-	(*ListPipelineNotifiersRequest)(nil),   // 9: ingestion.v1.ListPipelineNotifiersRequest
-	(*ListPipelineNotifiersResponse)(nil),  // 10: ingestion.v1.ListPipelineNotifiersResponse
-	(*DeletePipelineNotifierRequest)(nil),  // 11: ingestion.v1.DeletePipelineNotifierRequest
-	(*DeletePipelineNotifierResponse)(nil), // 12: ingestion.v1.DeletePipelineNotifierResponse
-	nil,                                    // 13: ingestion.v1.Notifier.SecretRefsEntry
-	nil,                                    // 14: ingestion.v1.WebhookNotifierDestination.HeadersEntry
+	(NotifierEvent)(0),                     // 1: ingestion.v1.NotifierEvent
+	(*Notifier)(nil),                       // 2: ingestion.v1.Notifier
+	(*NotifierInput)(nil),                  // 3: ingestion.v1.NotifierInput
+	(*CreatePipelineNotifierRequest)(nil),  // 4: ingestion.v1.CreatePipelineNotifierRequest
+	(*CreatePipelineNotifierResponse)(nil), // 5: ingestion.v1.CreatePipelineNotifierResponse
+	(*UpdatePipelineNotifierRequest)(nil),  // 6: ingestion.v1.UpdatePipelineNotifierRequest
+	(*UpdatePipelineNotifierResponse)(nil), // 7: ingestion.v1.UpdatePipelineNotifierResponse
+	(*ListPipelineNotifiersRequest)(nil),   // 8: ingestion.v1.ListPipelineNotifiersRequest
+	(*ListPipelineNotifiersResponse)(nil),  // 9: ingestion.v1.ListPipelineNotifiersResponse
+	(*DeletePipelineNotifierRequest)(nil),  // 10: ingestion.v1.DeletePipelineNotifierRequest
+	(*DeletePipelineNotifierResponse)(nil), // 11: ingestion.v1.DeletePipelineNotifierResponse
+	nil,                                    // 12: ingestion.v1.Notifier.SecretRefsEntry
+	nil,                                    // 13: ingestion.v1.NotifierInput.SecretRefsEntry
+	(*structpb.Struct)(nil),                // 14: google.protobuf.Struct
 }
 var file_ingestion_v1_notifiers_proto_depIdxs = []int32{
 	0,  // 0: ingestion.v1.Notifier.notification_type:type_name -> ingestion.v1.NotificationType
-	13, // 1: ingestion.v1.Notifier.secret_refs:type_name -> ingestion.v1.Notifier.SecretRefsEntry
-	0,  // 2: ingestion.v1.NotifierInput.notification_type:type_name -> ingestion.v1.NotificationType
-	3,  // 3: ingestion.v1.NotifierInput.webhook:type_name -> ingestion.v1.WebhookNotifierInput
-	4,  // 4: ingestion.v1.WebhookNotifierInput.destination:type_name -> ingestion.v1.WebhookNotifierDestination
-	14, // 5: ingestion.v1.WebhookNotifierDestination.headers:type_name -> ingestion.v1.WebhookNotifierDestination.HeadersEntry
-	2,  // 6: ingestion.v1.CreatePipelineNotifierRequest.notifier:type_name -> ingestion.v1.NotifierInput
-	1,  // 7: ingestion.v1.CreatePipelineNotifierResponse.notifier:type_name -> ingestion.v1.Notifier
-	2,  // 8: ingestion.v1.UpdatePipelineNotifierRequest.notifier:type_name -> ingestion.v1.NotifierInput
-	1,  // 9: ingestion.v1.UpdatePipelineNotifierResponse.notifier:type_name -> ingestion.v1.Notifier
-	1,  // 10: ingestion.v1.ListPipelineNotifiersResponse.notifiers:type_name -> ingestion.v1.Notifier
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	1,  // 1: ingestion.v1.Notifier.events:type_name -> ingestion.v1.NotifierEvent
+	14, // 2: ingestion.v1.Notifier.config:type_name -> google.protobuf.Struct
+	12, // 3: ingestion.v1.Notifier.secret_refs:type_name -> ingestion.v1.Notifier.SecretRefsEntry
+	0,  // 4: ingestion.v1.NotifierInput.notification_type:type_name -> ingestion.v1.NotificationType
+	1,  // 5: ingestion.v1.NotifierInput.events:type_name -> ingestion.v1.NotifierEvent
+	14, // 6: ingestion.v1.NotifierInput.config:type_name -> google.protobuf.Struct
+	13, // 7: ingestion.v1.NotifierInput.secret_refs:type_name -> ingestion.v1.NotifierInput.SecretRefsEntry
+	3,  // 8: ingestion.v1.CreatePipelineNotifierRequest.notifier:type_name -> ingestion.v1.NotifierInput
+	2,  // 9: ingestion.v1.CreatePipelineNotifierResponse.notifier:type_name -> ingestion.v1.Notifier
+	3,  // 10: ingestion.v1.UpdatePipelineNotifierRequest.notifier:type_name -> ingestion.v1.NotifierInput
+	2,  // 11: ingestion.v1.UpdatePipelineNotifierResponse.notifier:type_name -> ingestion.v1.Notifier
+	2,  // 12: ingestion.v1.ListPipelineNotifiersResponse.notifiers:type_name -> ingestion.v1.Notifier
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_ingestion_v1_notifiers_proto_init() }
@@ -1007,20 +910,13 @@ func file_ingestion_v1_notifiers_proto_init() {
 	if File_ingestion_v1_notifiers_proto != nil {
 		return
 	}
-	file_ingestion_v1_notifiers_proto_msgTypes[1].OneofWrappers = []any{
-		(*NotifierInput_Webhook)(nil),
-	}
-	file_ingestion_v1_notifiers_proto_msgTypes[2].OneofWrappers = []any{
-		(*WebhookNotifierInput_Destination)(nil),
-		(*WebhookNotifierInput_DestinationSecretRef)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ingestion_v1_notifiers_proto_rawDesc), len(file_ingestion_v1_notifiers_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   14,
+			NumEnums:      2,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

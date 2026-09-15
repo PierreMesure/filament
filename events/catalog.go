@@ -125,7 +125,6 @@ type (
 	// NotifierAttemptedEvent records an observed notification operation.
 	NotifierAttemptedEvent struct {
 		NotifierID            string `json:"notifier_id"`
-		NotifierVersion       int64  `json:"notifier_version"`
 		NotificationType      string `json:"notification_type"`
 		PipelineID            string `json:"pipeline_id"`
 		PipelineVersionID     string `json:"pipeline_version_id,omitempty"`

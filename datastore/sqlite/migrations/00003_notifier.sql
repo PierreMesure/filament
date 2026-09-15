@@ -10,7 +10,6 @@ CREATE TABLE notifier (
   resources            TEXT    NOT NULL DEFAULT '[]',
   config               TEXT    NOT NULL DEFAULT '{}',
   secret_refs          TEXT    NOT NULL DEFAULT '{}',
-  version              INTEGER NOT NULL DEFAULT 1,
   is_deleted           INTEGER NOT NULL DEFAULT 0,
   deleted_at           INTEGER,
   created_by_user_id   TEXT,
