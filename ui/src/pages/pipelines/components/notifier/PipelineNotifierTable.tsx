@@ -168,6 +168,9 @@ const PipelineNotifierTable = <TRow extends PipelineNotifier>({
           )}
           enableMultiRowExpansion={false}
           variant={TableVariant.PRIMARY}
+          noLastRowBorder
+          noLastRowPadding
+          noHeader
           fillWidth
         />
       </FlexWrapper>
