@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	charm.land/lipgloss/v2 v2.0.6
 	connectrpc.com/connect v1.20.0
-	github.com/atterpac/dado v0.2.12
+	github.com/atterpac/dado v0.2.13
 	github.com/galaxy-io/filament v0.0.0
 	github.com/galaxy-io/filament/connectors/bigquery v0.0.0
 	github.com/galaxy-io/filament/connectors/iceberg v0.0.0-00010101000000-000000000000
