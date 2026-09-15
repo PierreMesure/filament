@@ -1,18 +1,13 @@
-import type { Notifier, WebhookNotifierDestination } from "@/gen/ingestion/v1/notifiers_pb";
-
-// TODO(@mitchbregs): This should be a proto
-export enum PipelineNotifierEvent {
-  RUN_COMPLETED = "run.completed",
-  RUN_FAILED = "run.failed",
-}
+import type { Notifier, NotifierEvent } from "@/gen/ingestion/v1/notifiers_pb";
 
 export interface PipelineNotifierState {
   name: Notifier["name"];
+  notificationType: Notifier["notificationType"];
   isEnabled: Notifier["isEnabled"];
-  events: PipelineNotifierEvent[];
-  hasStoredDestination: boolean;
-  url: WebhookNotifierDestination["url"];
+  events: NotifierEvent[];
+  url: string;
   headers: string;
+  secretRefs: Notifier["secretRefs"];
 }
 
 export interface PipelineNotifier extends PipelineNotifierState {

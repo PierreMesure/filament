@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,98 +11,82 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/galaxy-io/filament"
-	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 	"github.com/galaxy-io/filament/internal/notifier/webhook"
 )
 
-// notifierDestination returns the selected reference and whether this request wrote it.
-func (a *Server) notifierDestination(ctx context.Context, n *ingestionv1.Notifier, in *ingestionv1.WebhookNotifierInput) (string, bool, error) {
-	switch source := in.GetDestinationSource().(type) {
-	case *ingestionv1.WebhookNotifierInput_Destination:
-		destination, err := webhook.NormalizeAndValidateDestination(webhook.Destination{
-			URL: source.Destination.GetUrl(), Headers: source.Destination.GetHeaders(),
-		})
-		if err != nil {
-			return "", false, connect.NewError(connect.CodeInvalidArgument, err)
-		}
-		ref, err := a.writeNotifierDestination(ctx, n, destination)
-		return ref, err == nil, err
-	case *ingestionv1.WebhookNotifierInput_DestinationSecretRef:
-		ref := source.DestinationSecretRef
-		if err := a.validateNotifierDestinationRef(ctx, n, ref); err != nil {
-			return "", false, err
-		}
-		return ref, false, nil
-	default:
-		if ref := n.GetSecretRefs()["destination"]; ref != "" {
-			return ref, false, nil
-		}
-		return "", false, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("webhook destination or destination_secret_ref is required"))
-	}
+// notifierSecretRef builds the ref for a notifier-managed secret. Rules have no
+// version, so each write gets a fresh revision.
+func notifierSecretRef(tenant, notifierID, field string) string {
+	return fmt.Sprintf("%s%s/notifier/%s/%s/%s", filament.ConnectionSecretPrefix, tenant, notifierID, field, uuid.NewString())
 }
 
-func (a *Server) writeNotifierDestination(ctx context.Context, n *ingestionv1.Notifier, destination webhook.Destination) (string, error) {
-	if a.secrets == nil {
-		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("a secrets provider is required"))
+// validateNotifierConfig checks the config the rule will deliver with. A
+// header secret the request left out is read back only when the reference is
+// external; managed references were validated when they were written.
+func (a *Server) validateNotifierConfig(ctx context.Context, tenant string, cfg map[string]any, refs map[string]string) error {
+	effective := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		effective[k] = cloneConfigValue(v)
 	}
-	value, err := json.Marshal(destination)
-	if err != nil {
-		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("encode webhook destination: %w", err))
+	ref, hasRef := refs[webhook.HeadersField]
+	if _, present := effective[webhook.HeadersField]; !present && hasRef && !strings.HasPrefix(ref, filament.ConnectionSecretPrefix) {
+		if err := a.resolveNotifierSecret(ctx, tenant, webhook.HeadersField, ref, effective); err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
 	}
-	ref := notifierSecretPrefix(n) + uuid.NewString()
-	if err := a.secrets.Write(ctx, ref, filament.Secret{Tenant: filament.TenantID(n.GetTenantId()), Value: value}); err != nil {
-		a.deleteNotifierSecret(ctx, n, ref)
-		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("could not store webhook destination; inline destinations require a writable secrets provider"))
-	}
-	return ref, nil
-}
-
-func (a *Server) validateNotifierDestinationRef(ctx context.Context, n *ingestionv1.Notifier, ref string) error {
-	tenant := filament.TenantID(n.GetTenantId())
-	if ref == "" || filament.ValidateConnectionSecretRef(ref, tenant) != nil {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid destination secret reference"))
-	}
-	// Only the current managed reference may be reused. Old revisions can be
-	// undergoing cleanup, and another notifier's secret has its own lifecycle.
-	if strings.HasPrefix(ref, filament.ConnectionSecretPrefix) &&
-		(ref != n.GetSecretRefs()["destination"] || !ownsNotifierSecret(n, ref)) {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("managed destination reference must be this notifier's current reference"))
-	}
-	if a.secrets == nil {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("a secrets provider is required"))
-	}
-	secret, err := a.secrets.Read(ctx, ref)
-	if err != nil || secret.Tenant != "" && secret.Tenant != tenant {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("could not resolve destination secret"))
-	}
-	if _, err := webhook.ParseDestination(secret.Value); err != nil {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("invalid webhook destination secret: %w", err))
+	if _, err := webhook.DestinationFromConfig(effective); err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return nil
 }
 
-func notifierSecretPrefix(n *ingestionv1.Notifier) string {
-	return fmt.Sprintf("%s%s/notifier/%s/destination/", filament.ConnectionSecretPrefix, n.GetTenantId(), n.GetId())
+// resolveNotifierSecret reads one secret ref and injects its JSON object into cfg.
+func (a *Server) resolveNotifierSecret(ctx context.Context, tenant, field, ref string, cfg map[string]any) error {
+	if a.secrets == nil {
+		return fmt.Errorf("secret ref for field %q supplied but no secret provider is configured", field)
+	}
+	secret, err := a.secrets.Read(ctx, ref)
+	if err != nil || secret.Tenant != "" && secret.Tenant != filament.TenantID(tenant) {
+		return fmt.Errorf("could not resolve secret for field %q", field)
+	}
+	var object map[string]any
+	if err := json.Unmarshal(secret.Value, &object); err != nil {
+		return fmt.Errorf("secret for field %q must be a JSON object", field)
+	}
+	cfg[field] = object
+	return nil
 }
 
-func ownsNotifierSecret(n *ingestionv1.Notifier, ref string) bool {
-	revision, ok := strings.CutPrefix(ref, notifierSecretPrefix(n))
-	return ok && uuid.Validate(revision) == nil
-}
-
-func (a *Server) deleteNotifierSecret(ctx context.Context, n *ingestionv1.Notifier, ref string) {
-	if a.secrets == nil || !ownsNotifierSecret(n, ref) {
-		return
+// storeNotifierSecretFields mirrors storeSecretFields for rules: secret
+// fields leave cfg and land in refs. An empty object clears the field.
+func (a *Server) storeNotifierSecretFields(ctx context.Context, tenant, id string, cfg map[string]any, refs map[string]string, isUpdate bool) ([]string, error) {
+	fields, err := extractSecretFields(webhook.ConfigSchema.Fields, cfg, "", isUpdate)
+	if err != nil {
+		return nil, err
 	}
-	// A disconnected client must not prevent cleanup after a completed write.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if err := a.secrets.Delete(ctx, ref); err != nil && !errors.Is(err, filament.ErrNotFound) && a.log != nil {
-		a.log.Warn("notifier secret cleanup failed",
-			filament.Field{Key: "tenant.id", Value: n.GetTenantId()},
-			filament.Field{Key: "pipeline.id", Value: n.GetPipelineId()},
-			filament.Field{Key: "notifier.id", Value: n.GetId()})
+	written := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.value == "" {
+			delete(refs, field.path)
+			continue
+		}
+		if a.secrets == nil {
+			return nil, fmt.Errorf("secret field %q supplied but no secret provider is configured", field.path)
+		}
+		ref := notifierSecretRef(tenant, id, field.path)
+		secret := filament.Secret{
+			Tenant: filament.TenantID(tenant),
+			Value:  []byte(field.value),
+			Meta:   map[string]string{"tenant": tenant, "notifier": id, "field": field.path},
+		}
+		if err := a.secrets.Write(ctx, ref, secret); err != nil {
+			a.deleteSecretRefs(ctx, written)
+			return nil, fmt.Errorf("store secret field %q: %w", field.path, err)
+		}
+		refs[field.path] = ref
+		written = append(written, ref)
 	}
+	return written, nil
 }
 
 func (a *Server) deletePipelineNotifierSecrets(ctx context.Context, tenant filament.TenantID, pipelineID string) {
@@ -124,6 +107,6 @@ func (a *Server) deletePipelineNotifierSecrets(ctx context.Context, tenant filam
 		return
 	}
 	for _, n := range rules {
-		a.deleteNotifierSecret(ctx, n, n.GetSecretRefs()["destination"])
+		a.deleteSecretRefs(ctx, mapValues(n.GetSecretRefs()))
 	}
 }

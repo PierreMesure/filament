@@ -7,13 +7,15 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/galaxy-io/filament"
 	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 	"github.com/galaxy-io/filament/datastore/postgres/sqlcgen"
+	"github.com/galaxy-io/filament/internal/notifier"
 )
 
-// CreateNotifier adds a rule at version 1.
+// CreateNotifier adds a rule.
 func (s *Store) CreateNotifier(ctx context.Context, n *ingestionv1.Notifier) (*ingestionv1.Notifier, error) {
 	if n == nil {
 		return nil, fmt.Errorf("create notifier: notifier is required")
@@ -71,22 +73,22 @@ func (s *Store) ListNotifiers(ctx context.Context, tenant filament.TenantID, pip
 	return out, nil
 }
 
-// UpdateNotifier replaces settings when the stored version matches.
+// UpdateNotifier replaces a live rule's settings.
 func (s *Store) UpdateNotifier(ctx context.Context, n *ingestionv1.Notifier) (*ingestionv1.Notifier, error) {
 	if n == nil {
 		return nil, fmt.Errorf("update notifier: notifier is required")
 	}
 	kind, err := notifierTypeToRow(n.GetNotificationType())
 	if err != nil {
-		return nil, fmt.Errorf("update notifier %q at version %d: %w", n.GetId(), n.GetVersion(), err)
+		return nil, fmt.Errorf("update notifier %q: %w", n.GetId(), err)
 	}
 	data, err := marshalNotifier(n)
 	if err != nil {
-		return nil, fmt.Errorf("update notifier %q at version %d: %w", n.GetId(), n.GetVersion(), err)
+		return nil, fmt.Errorf("update notifier %q: %w", n.GetId(), err)
 	}
 	tenant := filament.TenantID(n.GetTenantId())
 	saved, err := s.writeNotifier(ctx, tenant, n.GetPipelineId(), n.GetId(), func(q *sqlcgen.Queries) (*sqlcgen.Notifier, error) {
-		row, err := notifierForUpdate(ctx, q, tenant, n.GetPipelineId(), n.GetId(), n.GetVersion())
+		row, err := liveNotifier(ctx, q, tenant, n.GetPipelineId(), n.GetId())
 		if err != nil {
 			return nil, err
 		}
@@ -94,29 +96,27 @@ func (s *Store) UpdateNotifier(ctx context.Context, n *ingestionv1.Notifier) (*i
 			return nil, fmt.Errorf("notifier notification type cannot change")
 		}
 		return q.UpdateNotifier(ctx, sqlcgen.UpdateNotifierParams{
-			TenantID: n.GetTenantId(), PipelineID: n.GetPipelineId(), NotifierID: n.GetId(), ExpectedVersion: n.GetVersion(),
+			TenantID: n.GetTenantId(), PipelineID: n.GetPipelineId(), NotifierID: n.GetId(),
 			Name: n.GetName(), IsEnabled: n.GetIsEnabled(), Events: data.events, Resources: data.resources,
 			Config: data.config, SecretRefs: data.refs, UpdatedByUserID: toText(n.GetUpdatedByUserId()),
 		})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("update notifier %q at version %d: %w", n.GetId(), n.GetVersion(), err)
+		return nil, fmt.Errorf("update notifier %q: %w", n.GetId(), err)
 	}
 	return saved, nil
 }
 
-// DeleteNotifier marks a rule deleted and returns its metadata for secret cleanup.
-func (s *Store) DeleteNotifier(ctx context.Context, tenant filament.TenantID, pipelineID, id string, version int64) (*ingestionv1.Notifier, error) {
+// DeleteNotifier marks a live rule deleted and returns it for secret cleanup.
+func (s *Store) DeleteNotifier(ctx context.Context, tenant filament.TenantID, pipelineID, id string) (*ingestionv1.Notifier, error) {
 	saved, err := s.writeNotifier(ctx, tenant, pipelineID, id, func(q *sqlcgen.Queries) (*sqlcgen.Notifier, error) {
-		if _, err := notifierForUpdate(ctx, q, tenant, pipelineID, id, version); err != nil {
+		if _, err := liveNotifier(ctx, q, tenant, pipelineID, id); err != nil {
 			return nil, err
 		}
-		return q.DeleteNotifier(ctx, sqlcgen.DeleteNotifierParams{
-			TenantID: string(tenant), PipelineID: pipelineID, NotifierID: id, ExpectedVersion: version,
-		})
+		return q.DeleteNotifier(ctx, sqlcgen.DeleteNotifierParams{TenantID: string(tenant), PipelineID: pipelineID, NotifierID: id})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("delete notifier %q at version %d: %w", id, version, err)
+		return nil, fmt.Errorf("delete notifier %q: %w", id, err)
 	}
 	return saved, nil
 }
@@ -140,6 +140,9 @@ func (s *Store) writeNotifier(ctx context.Context, tenant filament.TenantID, pip
 		return nil, fmt.Errorf("datastore/postgres: lock notifier pipeline: %w", err)
 	}
 	row, err := write(q)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("notifier %q: %w", id, filament.ErrNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("datastore/postgres: write notifier: %w", err)
 	}
@@ -153,7 +156,7 @@ func (s *Store) writeNotifier(ctx context.Context, tenant filament.TenantID, pip
 	return n, nil
 }
 
-func notifierForUpdate(ctx context.Context, q *sqlcgen.Queries, tenant filament.TenantID, pipelineID, id string, version int64) (*sqlcgen.Notifier, error) {
+func liveNotifier(ctx context.Context, q *sqlcgen.Queries, tenant filament.TenantID, pipelineID, id string) (*sqlcgen.Notifier, error) {
 	row, err := q.GetNotifier(ctx, sqlcgen.GetNotifierParams{TenantID: string(tenant), PipelineID: pipelineID, NotifierID: id})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, filament.ErrNotFound
@@ -161,8 +164,8 @@ func notifierForUpdate(ctx context.Context, q *sqlcgen.Queries, tenant filament.
 	if err != nil {
 		return nil, err
 	}
-	if row.IsDeleted || row.Version != version {
-		return nil, filament.ErrVersionConflict
+	if row.IsDeleted {
+		return nil, filament.ErrNotFound
 	}
 	return row, nil
 }
@@ -174,20 +177,55 @@ func notifierFromRow(row *sqlcgen.Notifier) (*ingestionv1.Notifier, error) {
 	}
 	n := &ingestionv1.Notifier{
 		Id: row.ID, TenantId: row.TenantID, PipelineId: row.PipelineID,
-		Name: row.Name, NotificationType: kind, IsEnabled: row.IsEnabled, Version: row.Version,
+		Name: row.Name, NotificationType: kind, IsEnabled: row.IsEnabled,
 		CreatedAt: timestampMillis(row.CreatedAt), UpdatedAt: timestampMillis(row.UpdatedAt), DeletedAt: timestampMillis(row.DeletedAt),
 		CreatedByUserId: row.CreatedByUserID.String, UpdatedByUserId: row.UpdatedByUserID.String, DeletedByUserId: row.DeletedByUserID.String,
 	}
-	if err := json.Unmarshal(row.Events, &n.Events); err != nil {
+	var names []string
+	if err := json.Unmarshal(row.Events, &names); err != nil {
 		return nil, fmt.Errorf("datastore/postgres: unmarshal notifier %q events: %w", row.ID, err)
+	}
+	if n.Events, err = notifierEventsFromRow(names); err != nil {
+		return nil, fmt.Errorf("datastore/postgres: notifier %q: %w", row.ID, err)
 	}
 	if err := json.Unmarshal(row.Resources, &n.Resources); err != nil {
 		return nil, fmt.Errorf("datastore/postgres: unmarshal notifier %q resources: %w", row.ID, err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(row.Config, &config); err != nil {
+		return nil, fmt.Errorf("datastore/postgres: unmarshal notifier %q config: %w", row.ID, err)
+	}
+	if n.Config, err = structpb.NewStruct(config); err != nil {
+		return nil, fmt.Errorf("datastore/postgres: notifier %q config: %w", row.ID, err)
 	}
 	if err := json.Unmarshal(row.SecretRefs, &n.SecretRefs); err != nil {
 		return nil, fmt.Errorf("datastore/postgres: unmarshal notifier %q secret_refs: %w", row.ID, err)
 	}
 	return n, nil
+}
+
+func notifierEventsFromRow(names []string) ([]ingestionv1.NotifierEvent, error) {
+	events := make([]ingestionv1.NotifierEvent, 0, len(names))
+	for _, name := range names {
+		event, err := notifier.ParseEventName(name)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+func notifierEventsToRow(events []ingestionv1.NotifierEvent) ([]string, error) {
+	names := make([]string, 0, len(events))
+	for _, event := range events {
+		name, err := notifier.EventName(event)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 func notifierTypeToRow(kind ingestionv1.NotificationType) (sqlcgen.NotificationType, error) {
@@ -211,20 +249,23 @@ func notifierTypeFromRow(kind sqlcgen.NotificationType) (ingestionv1.Notificatio
 type notifierJSON struct{ events, resources, config, refs []byte }
 
 func marshalNotifier(n *ingestionv1.Notifier) (notifierJSON, error) {
-	events := n.GetEvents()
-	if events == nil {
-		events = []string{}
+	events, err := notifierEventsToRow(n.GetEvents())
+	if err != nil {
+		return notifierJSON{}, err
 	}
 	resources := n.GetResources()
 	if resources == nil {
 		resources = []string{}
+	}
+	config := n.GetConfig().AsMap()
+	if config == nil {
+		config = map[string]any{}
 	}
 	refs := n.GetSecretRefs()
 	if refs == nil {
 		refs = map[string]string{}
 	}
 	var data notifierJSON
-	var err error
 	data.events, err = json.Marshal(events)
 	if err != nil {
 		return notifierJSON{}, fmt.Errorf("datastore/postgres: marshal notifier events: %w", err)
@@ -233,7 +274,7 @@ func marshalNotifier(n *ingestionv1.Notifier) (notifierJSON, error) {
 	if err != nil {
 		return notifierJSON{}, fmt.Errorf("datastore/postgres: marshal notifier resources: %w", err)
 	}
-	data.config, err = json.Marshal(map[string]any{})
+	data.config, err = json.Marshal(config)
 	if err != nil {
 		return notifierJSON{}, fmt.Errorf("datastore/postgres: marshal notifier config: %w", err)
 	}

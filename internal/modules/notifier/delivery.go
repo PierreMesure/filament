@@ -3,10 +3,11 @@ package notifier
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"github.com/galaxy-io/filament"
 	ingestionv1 "github.com/galaxy-io/filament/api/ingestion/v1"
 	notification "github.com/galaxy-io/filament/internal/notifier"
+	"github.com/galaxy-io/filament/internal/notifier/webhook"
 )
 
 var (
@@ -103,7 +105,6 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 	started := time.Now()
 	out.notification = trigger
 	out.notification.NotifierID = rule.GetId()
-	out.notification.NotifierVersion = rule.GetVersion()
 	out.notification.NotificationType = rule.GetNotificationType()
 	out.notification.AttemptID = uuid.NewString()
 	out.result = notification.DeliveryResult{Outcome: notification.OutcomeFailed, Retryable: true}
@@ -118,8 +119,7 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 		return out
 	}
 	out.notification.DeliveryID = id
-	rule, config, err := m.resolveDestination(ctx, trigger, rule)
-	out.notification.NotifierVersion = rule.GetVersion()
+	rule, config, err := m.resolveConfig(ctx, trigger, rule)
 	out.notification.NotificationType = rule.GetNotificationType()
 	if errors.Is(err, errInactiveRule) {
 		out.skipped = true
@@ -146,13 +146,14 @@ func (m *Module) deliver(ctx context.Context, trigger notification.Notification,
 	return out
 }
 
-func (m *Module) resolveDestination(ctx context.Context, trigger notification.Notification, rule *ingestionv1.Notifier) (*ingestionv1.Notifier, []byte, error) {
-	ref := rule.GetSecretRefs()["destination"]
-	value, err := m.readDestination(ctx, rule, ref)
-	if !errors.Is(err, filament.ErrNotFound) || !strings.HasPrefix(ref, filament.ConnectionSecretPrefix) {
-		return rule, value, err
+// resolveConfig reads the rule's secret references into its config and
+// renders the sender input. A managed reference that has vanished is retried
+// against a reloaded rule, since a concurrent update may have replaced it.
+func (m *Module) resolveConfig(ctx context.Context, trigger notification.Notification, rule *ingestionv1.Notifier) (*ingestionv1.Notifier, []byte, error) {
+	config, err := m.renderConfig(ctx, rule)
+	if !errors.Is(err, filament.ErrNotFound) {
+		return rule, config, err
 	}
-	// A concurrent update may have replaced and removed the selected secret.
 	current, loadErr := m.ds.LoadNotifier(ctx, trigger.Tenant, trigger.PipelineID, rule.GetId())
 	if errors.Is(loadErr, filament.ErrNotFound) {
 		return rule, nil, errInactiveRule
@@ -163,17 +164,46 @@ func (m *Module) resolveDestination(ctx context.Context, trigger notification.No
 	if filament.TenantID(current.GetTenantId()) != trigger.Tenant || current.GetPipelineId() != trigger.PipelineID || current.GetId() != rule.GetId() {
 		return rule, nil, errInvalidConfiguration
 	}
-	if !notification.Matches(current, trigger.TriggerType, trigger.Resource) {
+	if !notification.Matches(current, trigger.TriggerEvent, trigger.Resource) {
 		return current, nil, errInactiveRule
 	}
-	if current.GetVersion() == rule.GetVersion() {
+	if maps.Equal(current.GetSecretRefs(), rule.GetSecretRefs()) {
 		return current, nil, err
 	}
-	value, err = m.readDestination(ctx, current, current.GetSecretRefs()["destination"])
-	return current, value, err
+	config, err = m.renderConfig(ctx, current)
+	return current, config, err
 }
 
-func (m *Module) readDestination(ctx context.Context, rule *ingestionv1.Notifier, ref string) ([]byte, error) {
+// renderConfig resolves the header secret into the config and encodes the
+// destination the sender expects.
+func (m *Module) renderConfig(ctx context.Context, rule *ingestionv1.Notifier) ([]byte, error) {
+	cfg := rule.GetConfig().AsMap()
+	if cfg == nil {
+		cfg = map[string]any{}
+	}
+	if ref := rule.GetSecretRefs()[webhook.HeadersField]; ref != "" {
+		value, err := m.readSecret(ctx, rule, ref)
+		if err != nil {
+			return nil, err
+		}
+		var headers map[string]any
+		if err := json.Unmarshal(value, &headers); err != nil {
+			return nil, errInvalidConfiguration
+		}
+		cfg[webhook.HeadersField] = headers
+	}
+	destination, err := webhook.DestinationFromConfig(cfg)
+	if err != nil {
+		return nil, errInvalidConfiguration
+	}
+	raw, err := json.Marshal(destination)
+	if err != nil {
+		return nil, errInvalidConfiguration
+	}
+	return raw, nil
+}
+
+func (m *Module) readSecret(ctx context.Context, rule *ingestionv1.Notifier, ref string) ([]byte, error) {
 	tenant := filament.TenantID(rule.GetTenantId())
 	if ref == "" || filament.ValidateConnectionSecretRef(ref, tenant) != nil {
 		return nil, errInvalidConfiguration

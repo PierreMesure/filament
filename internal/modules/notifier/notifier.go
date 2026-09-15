@@ -57,9 +57,9 @@ func (m *Module) Name() string { return "notifier" }
 
 // Subscriptions declares one live-tail consumer per exported event kind.
 func (m *Module) Subscriptions() []host.Subscription {
-	subs := make([]host.Subscription, 0, len(notification.Exported))
-	for _, name := range notification.Exported {
-		d, _ := events.Lookup(name)
+	exported := notification.Exported()
+	subs := make([]host.Subscription, 0, len(exported))
+	for _, d := range exported {
 		subs = append(subs, host.Subscription{
 			Pattern: d.Pattern(), Durable: "notifier-" + d.Entity + "-" + d.Event, Replay: false,
 			MaxInFlight: maxInFlight, Handler: m.onFact,
@@ -92,7 +92,8 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 		m.ignored("decode_failed", msg.Seq())
 		return nil
 	}
-	if _, ok := events.Lookup(f.Name); !ok || !notification.IsExported(f.Name) || f.Tenant.Valid() != nil || f.Run.Valid() != nil {
+	event, err := notification.ParseEventName(f.Name)
+	if err != nil || f.Tenant.Valid() != nil || f.Run.Valid() != nil {
 		m.ignored("invalid_event", msg.Seq())
 		return nil
 	}
@@ -104,7 +105,7 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 	stop := m.keepAlive(ctx, cancel, msg)
 	defer stop()
 	lookupCtx, cancelLookup := context.WithTimeout(ctx, operationTimeout)
-	rules, request, err := m.rulesFor(lookupCtx, f)
+	rules, request, err := m.rulesFor(lookupCtx, f, event)
 	cancelLookup()
 	if err != nil || len(rules) == 0 {
 		return err
@@ -116,12 +117,12 @@ func (m *Module) onFact(ctx context.Context, msg eventbus.Message) error {
 	trigger := notification.Notification{
 		Tenant: f.Tenant, Run: f.Run, Resource: f.Resource,
 		PipelineID: request.PipelineID, PipelineVersionID: request.PipelineVersionID,
-		TriggerType: f.Name, TriggerSubject: msg.Subject(), TriggerStreamSequence: msg.Seq(), Event: frame,
+		TriggerType: f.Name, TriggerEvent: event, TriggerSubject: msg.Subject(), TriggerStreamSequence: msg.Seq(), Event: frame,
 	}
 	return m.deliverAll(ctx, trigger, rules)
 }
 
-func (m *Module) rulesFor(ctx context.Context, f events.Fact) ([]*ingestionv1.Notifier, filament.RunRequest, error) {
+func (m *Module) rulesFor(ctx context.Context, f events.Fact, event ingestionv1.NotifierEvent) ([]*ingestionv1.Notifier, filament.RunRequest, error) {
 	run, err := m.ds.LoadRun(ctx, f.Tenant, f.Run)
 	if errors.Is(err, filament.ErrNotFound) {
 		return nil, filament.RunRequest{}, nil
@@ -151,7 +152,7 @@ func (m *Module) rulesFor(ctx context.Context, f events.Fact) ([]*ingestionv1.No
 		if filament.TenantID(n.GetTenantId()) != f.Tenant || n.GetPipelineId() != run.Request.PipelineID {
 			return nil, run.Request, errors.New("notifier: rule does not belong to this pipeline")
 		}
-		if notification.Matches(n, f.Name, f.Resource) {
+		if notification.Matches(n, event, f.Resource) {
 			selected = append(selected, n)
 		}
 	}

@@ -17,7 +17,6 @@ import (
 // Notification is the in-memory input to a sender. Config contains resolved secrets.
 type Notification struct {
 	NotifierID            string
-	NotifierVersion       int64
 	NotificationType      ingestionv1.NotificationType
 	Tenant                filament.TenantID
 	Run                   filament.RunID
@@ -27,6 +26,7 @@ type Notification struct {
 	DeliveryID            string
 	AttemptID             string
 	TriggerType           string
+	TriggerEvent          ingestionv1.NotifierEvent
 	TriggerSubject        string
 	TriggerStreamSequence uint64
 	Event                 json.RawMessage

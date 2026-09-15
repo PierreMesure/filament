@@ -123,7 +123,6 @@ type Notifier struct {
 	Resources        []byte
 	Config           []byte
 	SecretRefs       []byte
-	Version          int64
 	IsDeleted        bool
 	DeletedAt        pgtype.Timestamptz
 	CreatedByUserID  pgtype.Text
