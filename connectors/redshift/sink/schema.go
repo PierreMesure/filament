@@ -170,6 +170,9 @@ func defineTable(schema, table string, model rowmodel.Schema, mode filament.Writ
 		keys[i] = quoteIdent(key)
 	}
 	if len(keys) > 0 {
+		// Keep the key inline with CREATE TABLE IF NOT EXISTS. On a rerun,
+		// Redshift leaves the existing table and constraint untouched instead
+		// of attempting to create the primary key again.
 		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(keys, ", ")+")")
 	}
 

@@ -239,7 +239,7 @@ func createFoldTableSQL(fold, stage string, table tableDefinition) string {
 	projected := columnIdentifiers(table.columns)
 	projected = append(projected, table.operation.identifier)
 	return "CREATE TEMP TABLE " + fold + " AS SELECT " + strings.Join(projected, ", ") +
-		" FROM " + stage + " QUALIFY ROW_NUMBER() OVER (PARTITION BY " + strings.Join(table.keys, ", ") +
+		" FROM " + stage + " AS s QUALIFY ROW_NUMBER() OVER (PARTITION BY " + strings.Join(table.keys, ", ") +
 		" ORDER BY " + table.ordinal.identifier + " DESC) = 1"
 }
 
