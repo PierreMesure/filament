@@ -40,40 +40,17 @@ These 13 resources are enabled by default. You can deselect any you do not need.
 | `session_recordings` | Replay metadata from your configured start date. | `session_recording:read` |
 | `surveys` | Survey definitions, questions, and targeting. | `survey:read` |
 
-<Accordion title="Optional resources and read scopes">
-These resources are disabled by default. Names ending in `_archived` read the
-archived catalog; their history resources follow that same catalog.
+Optional resources are disabled by default. They cover activity logs, alerts,
+archived experiments and flags, dashboard templates, datasets and version history,
+early-access features, error tracking, evaluations, event/property definitions,
+export jobs and history, group types, Hog functions, LLM configuration and reviews,
+replay playlists, saved endpoints and versions, subscriptions and deliveries, and
+survey responses. The events API is excluded.
 
-| Resources | Read scope |
-|---|---|
-| `activity_log` | `activity_log:read` |
-| `alerts` | `alert:read` |
-| `batch_export_backfills`, `batch_export_runs`, `batch_exports` | `batch_export:read` |
-| `dashboard_templates` | `dashboard_template:read` |
-| `dataset_item_versions`, `dataset_item_versions_archived`, `dataset_items`, `dataset_items_archived`, `dataset_revisions`, `dataset_revisions_archived`, `datasets`, `datasets_archived` | `dataset:read` |
-| `early_access_features` | `early_access_feature:read` |
-| `endpoint_versions`, `endpoints` | `endpoint:read` |
-| `error_tracking_alerts`, `error_tracking_assignment_rules`, `error_tracking_bypass_rules`, `error_tracking_external_references`, `error_tracking_fingerprints`, `error_tracking_grouping_rules`, `error_tracking_issues`, `error_tracking_releases`, `error_tracking_severity_rules`, `error_tracking_spike_events`, `error_tracking_stack_frames`, `error_tracking_suppression_rules`, `error_tracking_symbol_sets` | `error_tracking:read` |
-| `evaluations` | `evaluation:read` |
-| `event_definitions` | `event_definition:read` |
-| `event_property_definitions` | `property_definition:read` |
-| `experiments_archived` | `experiment:read` |
-| `feature_flags_archived` | `feature_flag:read` |
-| `file_download_batch_exports` | `batch_export:read` |
-| `group_property_definitions` | `group:read`, `property_definition:read` |
-| `group_types` | `group:read` |
-| `hog_functions` | `hog_function:read` |
-| `llm_clustering_jobs` | `ai_observability_clusters:read` |
-| `llm_evaluation_report_runs`, `llm_evaluation_reports` | `evaluation:read` |
-| `llm_parser_recipes` | `llm_analytics:read` |
-| `llm_prompts` | `llm_prompt:read` |
-| `llm_review_queue_items`, `llm_review_queues`, `llm_score_definitions`, `llm_trace_reviews` | `llm_analytics:read` |
-| `person_property_definitions` | `property_definition:read` |
-| `session_property_definitions` | `property_definition:read` |
-| `session_recording_playlists` | `session_recording_playlist:read` |
-| `subscription_deliveries`, `subscriptions` | `subscription:read` |
-| `survey_responses` | `survey:read`, `query:read` |
-</Accordion>
+Grant the read scopes required by the optional resources you select, as listed in
+the [PostHog API reference](https://posthog.com/docs/api). Survey responses require
+both `survey:read` and `query:read`. Resources ending in `_archived` read archived
+catalogs; their history resources follow the same catalog.
 
 Dashboards, experiments, and notebooks fetch detail records. Child resources
 fetch their required parents automatically. Nested data stays JSON; `raw`
@@ -81,21 +58,20 @@ preserves additional returned fields.
 
 ## Modes
 
-All resources support **full reads**. Full replace reflects records absent from
-the current API result; full upsert refreshes returned rows without removing
-missing ones. Full reads remain the default for the 13-resource selection.
+All resources support **full reads**. Full replace reflects removals from the
+API result; full upsert refreshes returned rows without deleting missing ones.
+Notebooks use full reads and include complete content.
 
-These resources also support **incremental upsert**:
+`insights` also supports incremental upsert using `last_modified_at`, with a
+one-second lookback. It tracks name, description, and query edits. Tags,
+favorites, associations, and view/refresh metadata need periodic full reads.
 
-| Resource | Cursor and behavior |
-|---|---|
-| `insights` | `last_modified_at` through `date_from`. Tracks name, description, and query edits. Tags, favorites, associations, and view/refresh metadata need periodic full reads. |
-| `session_recordings` | `start_time` through `date_from`, with a 24-hour lookback for ongoing sessions. Older uploads and later metadata changes need full reads. Increase the lookback for longer delivery delays. |
+`session_recordings` also supports incremental upsert using `start_time`, with a
+24-hour lookback for ongoing sessions. Older uploads and later metadata changes
+need full reads. You can increase the lookback in pipeline cursor settings.
 
-Insights overlap by one second because their filter uses a strict `>` comparison. Pipeline cursor settings can increase the lookback. Select only
-incremental-capable resources in an incremental pipeline; use a full-read pipeline
-for the others. Notebooks use full reads and retain complete content from their
-detail endpoints. Incremental reads do not propagate deletions.
+Select only insights and/or session recordings in an incremental pipeline. Use
+full reads for the other resources. Incremental reads do not propagate deletions.
 
 ## Behavior
 
@@ -115,7 +91,3 @@ detail endpoints. Incremental reads do not propagate deletions.
   binary downloads, and endpoint-specific activity/sharing histories are not
   included. `llm_prompts` reads latest prompts; `hog_functions` reads list
   definitions. Alert definitions do not enumerate the full check history.
-
-The date filters follow PostHog's implementations for
-[insights](https://github.com/PostHog/posthog/blob/master/products/product_analytics/backend/presentation/insight.py)
-and [replay](https://github.com/PostHog/posthog/blob/master/posthog/session_recordings/queries/session_recording_list_from_query.py).
