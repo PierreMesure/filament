@@ -1,70 +1,121 @@
 ---
 title: "PostHog"
-description: "Read people, events, cohorts, feature flags, experiments, and session replay metadata from a PostHog project"
+description: "Read people, groups, cohorts, feature flags, experiments, saved analytics, surveys, notebooks, and replay metadata"
 icon: "https://cdn.getgalaxy.io/sources/source-icon-posthog-dark.svg"
 ---
 
-The PostHog source reads people, events, cohorts, feature flags, experiments,
-insights, dashboards, actions, annotations, surveys, and session recordings
-from one project. It is built with an
-[HTTP manifest](/pages/connectors/building-a-connector/http-manifests) and is
-**beta**. Its resources are stable, though future releases may add columns.
+The PostHog source reads data from one project. It is **beta** and uses an
+[HTTP manifest](/pages/connectors/building-a-connector/http-manifests).
 
 ## Configuration
 
 | Field | Scope | Default | Description |
 |---|---|---|---|
-| `api_key` | Connection | | Required. Secret. Personal API key with read scopes for the synced resources. |
-| `project_id` | Connection | | Required. The digits after `/project/` in the app URL. |
-| `host` | Connection | `https://us.posthog.com` | US Cloud, `https://eu.posthog.com`, or a self-hosted origin. |
+| `api_key` | Connection | | Required. Personal API key with read access to the selected resources. |
+| `project_id` | Connection | | Required. Project ID from your PostHog settings or app URL. |
+| `host` | Connection | `https://us.posthog.com` | US Cloud, `https://eu.posthog.com`, or your self-hosted app origin. |
+| `session_recordings_start_date` | Pipeline | | Set an ISO 8601 timestamp before syncing session recordings, such as `2024-01-01T00:00:00Z`. Only retained recordings from this date are read. |
 
-`host` must be the app origin, not the `us.i.posthog.com` ingestion host,
-which does not serve `/api`.
+Create a [personal API key](https://posthog.com/docs/api/personal-api-keys) with
+access to your project and the scopes below. Use the app host, not an ingestion
+host such as `us.i.posthog.com`. Connection tests require `person:read`.
 
 ## Resources
 
-All resources are independent lists under `/api/projects/{project_id}/`.
-`persons` is the endpoint used by an explicit live connection test. The
-service API's normal config validation does not make that request. Useful IDs
-from embedded objects are also exposed as columns, such as
-`experiments.feature_flag_id` and `session_recordings.person_id`.
+These 13 resources are enabled by default. You can deselect any you do not need.
+
+| Resource | Data | Read scope |
+|---|---|---|
+| `actions` | Action definitions and matching steps. | `action:read` |
+| `annotations` | Annotations and dashboard/insight references. | `annotation:read` |
+| `cohort_members` | Current cohort membership and person properties. | `cohort:read`, `person:read` |
+| `cohorts` | Cohort definitions, filters, and counts. | `cohort:read` |
+| `dashboards` | Dashboard metadata, tiles, layouts, filters, and variables. | `dashboard:read` |
+| `experiments` | Non-archived experiments, linked flags, and metric definitions. | `experiment:read` |
+| `feature_flags` | Non-archived flags and targeting rules. | `feature_flag:read` |
+| `groups` | Group profiles and properties across all group types. | `group:read` |
+| `insights` | Saved analytics definitions and metadata. | `insight:read` |
+| `notebooks` | Notebook content, text, variables, and metadata. | `notebook:read` |
+| `persons` | Person profiles, distinct IDs, and properties. | `person:read` |
+| `session_recordings` | Replay metadata from your configured start date. | `session_recording:read` |
+| `surveys` | Survey definitions, questions, and targeting. | `survey:read` |
+
+<Accordion title="Optional resources and read scopes">
+These resources are disabled by default. Names ending in `_archived` read the
+archived catalog; their history resources follow that same catalog.
+
+| Resources | Read scope |
+|---|---|
+| `activity_log` | `activity_log:read` |
+| `alerts` | `alert:read` |
+| `batch_export_backfills`, `batch_export_runs`, `batch_exports` | `batch_export:read` |
+| `dashboard_templates` | `dashboard_template:read` |
+| `dataset_item_versions`, `dataset_item_versions_archived`, `dataset_items`, `dataset_items_archived`, `dataset_revisions`, `dataset_revisions_archived`, `datasets`, `datasets_archived` | `dataset:read` |
+| `early_access_features` | `early_access_feature:read` |
+| `endpoint_versions`, `endpoints` | `endpoint:read` |
+| `error_tracking_alerts`, `error_tracking_assignment_rules`, `error_tracking_bypass_rules`, `error_tracking_external_references`, `error_tracking_fingerprints`, `error_tracking_grouping_rules`, `error_tracking_issues`, `error_tracking_releases`, `error_tracking_severity_rules`, `error_tracking_spike_events`, `error_tracking_stack_frames`, `error_tracking_suppression_rules`, `error_tracking_symbol_sets` | `error_tracking:read` |
+| `evaluations` | `evaluation:read` |
+| `event_definitions` | `event_definition:read` |
+| `event_property_definitions` | `property_definition:read` |
+| `experiments_archived` | `experiment:read` |
+| `feature_flags_archived` | `feature_flag:read` |
+| `file_download_batch_exports` | `batch_export:read` |
+| `group_property_definitions` | `group:read`, `property_definition:read` |
+| `group_types` | `group:read` |
+| `hog_functions` | `hog_function:read` |
+| `llm_clustering_jobs` | `ai_observability_clusters:read` |
+| `llm_evaluation_report_runs`, `llm_evaluation_reports` | `evaluation:read` |
+| `llm_parser_recipes` | `llm_analytics:read` |
+| `llm_prompts` | `llm_prompt:read` |
+| `llm_review_queue_items`, `llm_review_queues`, `llm_score_definitions`, `llm_trace_reviews` | `llm_analytics:read` |
+| `person_property_definitions` | `property_definition:read` |
+| `session_property_definitions` | `property_definition:read` |
+| `session_recording_playlists` | `session_recording_playlist:read` |
+| `subscription_deliveries`, `subscriptions` | `subscription:read` |
+| `survey_responses` | `survey:read`, `query:read` |
+</Accordion>
+
+Dashboards, experiments, and notebooks fetch detail records. Child resources
+fetch their required parents automatically. Nested data stays JSON; `raw`
+preserves additional returned fields.
 
 ## Modes
 
-All resources support full reads. If interrupted, a full read resumes after
-the last completed page.
+All resources support **full reads**. Full replace reflects records absent from
+the current API result; full upsert refreshes returned rows without removing
+missing ones. Full reads remain the default for the 13-resource selection.
 
-Two resources are incremental.
+These resources also support **incremental upsert**:
 
-| Resource | Cursor field | Request parameter | Checkpoint key | Overlap |
-|---|---|---|---|---|
-| `events` | `timestamp` | `after` (query) | `events_timestamp` | 3600 s |
-| `insights` | `last_modified_at` | `date_from` (query) | `insights_last_modified_at` | 300 s |
+| Resource | Cursor and behavior |
+|---|---|
+| `insights` | `last_modified_at` through `date_from`. Tracks name, description, and query edits. Tags, favorites, associations, and view/refresh metadata need periodic full reads. |
+| `session_recordings` | `start_time` through `date_from`, with a 24-hour lookback for ongoing sessions. Older uploads and later metadata changes need full reads. Increase the lookback for longer delivery delays. |
 
-Both use the `time` comparator. The cursor field is fixed by the manifest.
-Only a lookback window is user-configurable, and only because the comparator
-is `time`. The `events` overlap is a full hour because event timestamps are
-client-supplied. Buffered mobile SDKs deliver events well behind wall clock,
-and the primary key dedupes the re-read. `insights` covers only clock skew,
-since `last_modified_at` is server-set. `persons` has no incremental block.
-The API offers no updated-since filter, so every run is a full snapshot.
+Insights overlap by one second because their filter uses a strict `>` comparison. Pipeline cursor settings can increase the lookback. Select only
+incremental-capable resources in an incremental pipeline; use a full-read pipeline
+for the others. Notebooks use full reads and retain complete content from their
+detail endpoints. Incremental reads do not propagate deletions.
 
 ## Behavior
 
-- **Auth**: bearer token from `api_key` on every request.
-- **Regional base URL**: `base_url` is templated as `{{ config.host }}` and
-  rendered once at Configure, against config only. One manifest serves US
-  Cloud, EU Cloud, and self-hosted instances.
-- **Pagination**: every list endpoint returns a DRF envelope. The manifest
-  follows the absolute `next` URL rather than computing offsets, with
-  `limit=100` per page.
-- **Rate limiting**: a static 0.3 requests/second limiter, sized to the
-  binding constraint (the analytics endpoints share a 1200-requests/hour
-  bucket). Draining an hourly bucket is a run failure, not a slowdown.
-  Retry sleeps cap at 60 seconds, so an hour-long window cannot be waited out.
-  PostHog publishes no rate-limit response headers, so there is no dynamic
-  block.
-- **Timeout**: `timeout_seconds: 120`, double the engine default, because
-  person and session-recording pages carry large embedded property blobs.
-- Every resource carries a `raw` remainder column preserving fields the
-  manifest does not project.
+- Pagination is automatic. Replay's `after` is a page cursor, separate from its
+  timestamp filter. Child reads restart their parent traversal after interruption.
+- Requests are paced at 0.3 per second with a 120-second timeout. PostHog shares
+  [API limits](https://posthog.com/docs/api) with other callers.
+- Results depend on permissions, product access, API version, and retention.
+  Missing access produces an error.
+- `survey_responses` includes submitted answers and archived responses within
+  the API's survey lifetime and retention window. `surveys` contains definitions.
+- Dashboards read cached tile data without requesting fresh calculations.
+  Insights and experiments do not calculate fresh results. Replay resources
+  contain metadata, not media; export resources contain job metadata, not files.
+- This is project data coverage, not every API operation. Events remain excluded.
+  Organization administration, credential APIs, arbitrary query execution,
+  binary downloads, and endpoint-specific activity/sharing histories are not
+  included. `llm_prompts` reads latest prompts; `hog_functions` reads list
+  definitions. Alert definitions do not enumerate the full check history.
+
+The date filters follow PostHog's implementations for
+[insights](https://github.com/PostHog/posthog/blob/master/products/product_analytics/backend/presentation/insight.py)
+and [replay](https://github.com/PostHog/posthog/blob/master/posthog/session_recordings/queries/session_recording_list_from_query.py).
