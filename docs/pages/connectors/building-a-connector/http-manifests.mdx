@@ -6,7 +6,7 @@ description: "Declarative YAML manifests that drive the generic HTTP API source"
 Use an HTTP manifest when an API can be described through endpoints,
 authentication, pagination, and JSON field mappings. You write YAML instead of
 a new Go connector. Filament's Notion, Linear, Attio, GitHub, Gong, Granola, Slack,
-Resend, Stripe, PostHog, and Pipedrive sources all use this path.
+Resend, Stripe, PostHog, Pipedrive, and monday.com sources all use this path.
 
 To try a manifest without recompiling Filament, create an `httpapi` connection
 and set its required `manifest_path` to your v1 YAML file. Once embedded in the
@@ -119,7 +119,8 @@ Choose the pagination style that matches the API:
 - `next_url: <path>` (whole-URL envelopes like Django REST Framework)
 - `cursor {response, request: query.X|body.X|header.X, more, null_terminates}`
 - `offset {offset, limit, page_size}` (stops on a short page)
-- `page {number, size, page_size, total_pages}`
+- `page {number, size, page_size, total_pages, more}`. For JSON bodies, use
+  `body.<path>` for both `number` and `size`.
 
 ### Read child endpoints
 

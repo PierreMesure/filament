@@ -380,11 +380,13 @@ type ErrorSpec struct {
 type PaginationSpec struct {
 	Type string `yaml:"type"` // cursor | offset | page | link_header | next_url | none
 
+	// Shared by cursor and page pagination.
+	InjectInto  string `yaml:"inject_into,omitempty"` // body | query | header (cursor only)
+	HasMorePath string `yaml:"has_more_path,omitempty"`
+
 	// cursor
 	CursorPath  string `yaml:"cursor_path,omitempty"`
 	CursorParam string `yaml:"cursor_param,omitempty"`
-	InjectInto  string `yaml:"inject_into,omitempty"` // body | query | header
-	HasMorePath string `yaml:"has_more_path,omitempty"`
 	// AllowNullTerminates, when true, treats an explicit JSON null at
 	// cursor_path as "no more pages" rather than an error. Default false:
 	// null is rejected so that an API silently changing its termination
@@ -489,11 +491,24 @@ func (p *PaginationSpec) UnmarshalYAML(node *yaml.Node) error {
 			Size       string `yaml:"size"`
 			PageSize   int    `yaml:"page_size"`
 			TotalPages string `yaml:"total_pages"`
+			More       string `yaml:"more"`
 		}
 		if err := value.Decode(&spec); err != nil {
 			return err
 		}
-		p.Type, p.PageParam, p.SizeParam, p.PageSize, p.TotalPagesPath = "page", spec.Number, spec.Size, spec.PageSize, spec.TotalPages
+		numberTarget, numberParam, ok := strings.Cut(spec.Number, ".")
+		if !ok {
+			numberTarget, numberParam = "query", spec.Number
+		}
+		sizeTarget, sizeParam, ok := strings.Cut(spec.Size, ".")
+		if !ok {
+			sizeTarget, sizeParam = "query", spec.Size
+		}
+		if numberTarget != sizeTarget || (numberTarget != "query" && numberTarget != "body") {
+			return fmt.Errorf("page pagination fields must share a query or body target")
+		}
+		p.Type, p.PageParam, p.SizeParam, p.PageSize, p.TotalPagesPath = "page", numberParam, sizeParam, spec.PageSize, spec.TotalPages
+		p.InjectInto, p.HasMorePath = numberTarget, spec.More
 	default:
 		return fmt.Errorf("unknown pagination strategy %q", strategy)
 	}
