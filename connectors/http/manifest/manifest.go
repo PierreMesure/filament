@@ -473,14 +473,8 @@ func (p *PaginationSpec) UnmarshalYAML(node *yaml.Node) error {
 		if err := value.Decode(&spec); err != nil {
 			return err
 		}
-		offsetTarget, offsetParam, ok := strings.Cut(spec.Offset, ".")
-		if !ok {
-			offsetTarget, offsetParam = "query", spec.Offset
-		}
-		limitTarget, limitParam, ok := strings.Cut(spec.Limit, ".")
-		if !ok {
-			limitTarget, limitParam = "query", spec.Limit
-		}
+		offsetTarget, offsetParam := paginationTarget(spec.Offset)
+		limitTarget, limitParam := paginationTarget(spec.Limit)
 		if offsetTarget != limitTarget || (offsetTarget != "query" && offsetTarget != "body") {
 			return fmt.Errorf("offset pagination fields must share a query or body target")
 		}
@@ -496,14 +490,8 @@ func (p *PaginationSpec) UnmarshalYAML(node *yaml.Node) error {
 		if err := value.Decode(&spec); err != nil {
 			return err
 		}
-		numberTarget, numberParam, ok := strings.Cut(spec.Number, ".")
-		if !ok {
-			numberTarget, numberParam = "query", spec.Number
-		}
-		sizeTarget, sizeParam, ok := strings.Cut(spec.Size, ".")
-		if !ok {
-			sizeTarget, sizeParam = "query", spec.Size
-		}
+		numberTarget, numberParam := paginationTarget(spec.Number)
+		sizeTarget, sizeParam := paginationTarget(spec.Size)
 		if numberTarget != sizeTarget || (numberTarget != "query" && numberTarget != "body") {
 			return fmt.Errorf("page pagination fields must share a query or body target")
 		}
@@ -513,6 +501,15 @@ func (p *PaginationSpec) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("unknown pagination strategy %q", strategy)
 	}
 	return nil
+}
+
+// paginationTarget defaults bare page and offset parameter names to query targets.
+func paginationTarget(field string) (string, string) {
+	target, param, ok := strings.Cut(field, ".")
+	if !ok {
+		return "query", field
+	}
+	return target, param
 }
 
 // IncrementalSpec configures watermark-based incremental extraction.
