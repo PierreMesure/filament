@@ -7,6 +7,7 @@ package sink
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +15,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/galaxy-io/filament"
 	"github.com/galaxy-io/filament/arrowbatch"
-	"github.com/galaxy-io/filament/connectors/internal/ndjson"
+	jsonencoder "github.com/galaxy-io/filament/connectors/internal/json"
 	"github.com/galaxy-io/filament/rowmodel"
 )
 
@@ -26,23 +27,25 @@ type indexMeta struct {
 
 // Sink writes Arrow record batches into Meilisearch indexes.
 type Sink struct {
-	mu      sync.Mutex
-	cfg     Config
-	client  *Client
-	run     filament.RunID
-	indexes map[string]*indexMeta
-	enc     map[*arrow.Schema]*ndjson.Encoder
-	buf     []byte
-	tasks   []int64
-	written atomic.Int64
-	aborted bool
+	mu       sync.Mutex
+	cfg      Config
+	client   *Client
+	run      filament.RunID
+	policies map[string]filament.WritePolicy
+	indexes  map[string]*indexMeta
+	cleared  map[string]struct{}
+	enc      map[*arrow.Schema]*jsonencoder.Encoder
+	buf      []byte
+	tasks    []int64
+	written  atomic.Int64
+	aborted  bool
 }
 
 // New returns an unconfigured Meilisearch sink.
 func New() *Sink {
 	return &Sink{
 		indexes: make(map[string]*indexMeta),
-		enc:     make(map[*arrow.Schema]*ndjson.Encoder),
+		enc:     make(map[*arrow.Schema]*jsonencoder.Encoder),
 	}
 }
 
@@ -81,13 +84,27 @@ func (s *Sink) Spec() filament.SinkSpec {
 	}
 }
 
+var crcTable = crc32.MakeTable(crc32.Castagnoli)
+
+// commitDurableCapabilities declares every mode durable after Commit and
+// visible per batch: documents are searchable as each task finishes, and
+// replace clears the live index rather than swapping a staged one.
 func commitDurableCapabilities(types ...filament.IngestionType) []filament.WritePolicyCapability {
 	capabilities := filament.WriteCapabilities(types...)
 	for i := range capabilities {
 		capabilities[i].Durability = filament.DurabilityAfterCommit
-		capabilities[i].Atomicity = filament.AtomicityResource
+		capabilities[i].Atomicity = filament.AtomicityBatch
 	}
 	return capabilities
+}
+
+// modeFor returns the write mode governing one resource: its bound policy, or
+// the run-wide policy for runs with no explicit resource list.
+func (s *Sink) modeFor(resource string) filament.WriteMode {
+	if p, ok := s.policies[resource]; ok {
+		return p.Capability.Mode
+	}
+	return s.policies[""].Capability.Mode
 }
 
 // Name identifies this sink implementation.
@@ -122,8 +139,10 @@ func (s *Sink) Open(ctx context.Context, run filament.RunSpec) error {
 	s.cfg = parsed
 	s.client = NewClient(parsed.URL, parsed.APIKey, parsed.Gzip)
 	s.run = run.Run
+	s.policies = run.WritePolicies
 	s.indexes = make(map[string]*indexMeta)
-	s.enc = make(map[*arrow.Schema]*ndjson.Encoder)
+	s.cleared = make(map[string]struct{})
+	s.enc = make(map[*arrow.Schema]*jsonencoder.Encoder)
 	s.tasks = nil
 	s.aborted = false
 
@@ -206,6 +225,19 @@ func (s *Sink) EnsureSchema(ctx context.Context, resource string, schema rowmode
 		}
 	}
 
+	// Replace clears the index once per run. Tasks run in queue order, so the
+	// clear lands before this run's documents.
+	if _, done := s.cleared[indexUID]; !done && existing != nil && s.modeFor(resource) == filament.WriteReplace {
+		task, err := s.client.DeleteAllDocuments(ctx, indexUID)
+		if err != nil {
+			return fmt.Errorf("meilisearch sink: clear index %q: %w", indexUID, err)
+		}
+		if task != nil && task.TaskUID > 0 {
+			s.tasks = append(s.tasks, task.TaskUID)
+		}
+	}
+	s.cleared[indexUID] = struct{}{}
+
 	s.indexes[resource] = &indexMeta{
 		UID:           indexUID,
 		PrimaryKey:    primaryKey,
@@ -275,7 +307,7 @@ func (s *Sink) writeBatch(ctx context.Context, meta *indexMeta, b *arrowbatch.Ba
 	rows := b.Rows()
 	enc := s.enc[rows.Schema()]
 	if enc == nil {
-		enc = ndjson.NewEncoder(rows.Schema())
+		enc = jsonencoder.NewEncoder(rows.Schema())
 		s.enc[rows.Schema()] = enc
 	}
 
@@ -307,68 +339,79 @@ func (s *Sink) writeBatch(ctx context.Context, meta *indexMeta, b *arrowbatch.Ba
 	}, nil
 }
 
+// writeMerge walks the batch as ordered runs of deletes and upserts. Tasks run
+// in queue order, so a key deleted and re-inserted in one batch settles correctly.
 func (s *Sink) writeMerge(ctx context.Context, meta *indexMeta, b *arrowbatch.Batch) (filament.WriteReceipt, error) {
-	// Separate deletes from inserts/updates
-	var deleteIDs []string
 	rows := b.Rows()
-
-	if meta.PrimaryKeyIdx >= 0 && meta.PrimaryKeyIdx < int(rows.NumCols()) {
-		pkCol := rows.Column(meta.PrimaryKeyIdx)
-		for i := range b.NumRows() {
-			if b.Op(i) == filament.OpDelete {
-				if !pkCol.IsNull(i) {
-					deleteIDs = append(deleteIDs, FormatDocumentID(pkCol.ValueStr(i)))
-				}
-			}
-		}
+	if meta.PrimaryKeyIdx < 0 || meta.PrimaryKeyIdx >= int(rows.NumCols()) {
+		return filament.WriteReceipt{}, fmt.Errorf("meilisearch sink: merge on %q: primary key %q is not in the schema", b.Resource, meta.PrimaryKey)
 	}
+	pkCol := rows.Column(meta.PrimaryKeyIdx)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// If there are deletes, send batch delete
-	if len(deleteIDs) > 0 {
-		task, err := s.client.DeleteDocumentsBatch(ctx, meta.UID, deleteIDs)
-		if err != nil {
-			return filament.WriteReceipt{}, fmt.Errorf("meilisearch: cdc delete: %w", err)
+	enc := s.enc[rows.Schema()]
+	if enc == nil {
+		enc = jsonencoder.NewEncoder(rows.Schema())
+		s.enc[rows.Schema()] = enc
+	}
+
+	var (
+		nbytes     int64
+		encodedCRC uint32
+	)
+	n := b.NumRows()
+	for lo := 0; lo < n; {
+		deleting := b.Op(lo) == filament.OpDelete
+		hi := lo + 1
+		for hi < n && (b.Op(hi) == filament.OpDelete) == deleting {
+			hi++
+		}
+
+		var (
+			task *TaskResponse
+			err  error
+		)
+		if deleting {
+			ids := make([]string, 0, hi-lo)
+			for i := lo; i < hi; i++ {
+				if !pkCol.IsNull(i) {
+					ids = append(ids, FormatDocumentID(pkCol.ValueStr(i)))
+				}
+			}
+			task, err = s.client.DeleteDocumentsBatch(ctx, meta.UID, ids)
+			if err != nil {
+				return filament.WriteReceipt{}, fmt.Errorf("meilisearch: cdc delete: %w", err)
+			}
+		} else {
+			slice := rows.NewSlice(int64(lo), int64(hi))
+			buf, _, encErr := enc.EncodeBatch(s.buf[:0], slice)
+			slice.Release()
+			if encErr != nil {
+				return filament.WriteReceipt{}, fmt.Errorf("meilisearch: serialize %s: %w", b.Resource, encErr)
+			}
+			s.buf = buf
+			task, err = s.client.AddDocumentsNDJSON(ctx, meta.UID, meta.PrimaryKey, buf, false)
+			if err != nil {
+				return filament.WriteReceipt{}, err
+			}
+			nbytes += int64(len(buf))
+			encodedCRC = crc32.Update(encodedCRC, crcTable, buf)
 		}
 		if task != nil && task.TaskUID > 0 {
 			s.tasks = append(s.tasks, task.TaskUID)
 		}
+		lo = hi
 	}
 
-	// Encode all rows
-	enc := s.enc[rows.Schema()]
-	if enc == nil {
-		enc = ndjson.NewEncoder(rows.Schema())
-		s.enc[rows.Schema()] = enc
-	}
-
-	buf, encodedCRC, err := enc.EncodeBatch(s.buf[:0], rows)
-	if err != nil {
-		return filament.WriteReceipt{}, fmt.Errorf("meilisearch: serialize %s: %w", b.Resource, err)
-	}
-	s.buf = buf
-
-	arrowCRC := b.IntegrityCRC()
-
-	// Send documents
-	task, err := s.client.AddDocumentsNDJSON(ctx, meta.UID, meta.PrimaryKey, buf, false)
-	if err != nil {
-		return filament.WriteReceipt{}, err
-	}
-	if task != nil && task.TaskUID > 0 {
-		s.tasks = append(s.tasks, task.TaskUID)
-	}
-
-	nbytes := int64(len(buf))
-	s.written.Add(int64(b.NumRows()))
+	s.written.Add(int64(n))
 
 	return filament.WriteReceipt{
 		URI:        fmt.Sprintf("meilisearch://%s/%s", s.cfg.URL, meta.UID),
 		Bytes:      nbytes,
-		Rows:       b.NumRows(),
-		WriteCRC:   arrowCRC,
+		Rows:       n,
+		WriteCRC:   b.IntegrityCRC(),
 		EncodedCRC: &encodedCRC,
 	}, nil
 }

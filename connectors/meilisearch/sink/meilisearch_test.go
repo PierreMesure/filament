@@ -94,6 +94,9 @@ func TestSinkSpec(t *testing.T) {
 		if p.Durability != filament.DurabilityAfterCommit {
 			t.Errorf("policy %q durability = %q, want %q", p.Mode, p.Durability, filament.DurabilityAfterCommit)
 		}
+		if p.Atomicity != filament.AtomicityBatch {
+			t.Errorf("policy %q atomicity = %q, want %q", p.Mode, p.Atomicity, filament.AtomicityBatch)
+		}
 	}
 	for mode, found := range expectedModes {
 		if !found {
@@ -345,5 +348,118 @@ func TestSinkLifecycleWithMockServer(t *testing.T) {
 	// Commit
 	if err := sink.Commit(ctx); err != nil {
 		t.Fatalf("Commit failed: %v", err)
+	}
+}
+
+// recordingServer records the write requests a run sends, in order.
+func recordingServer(t *testing.T, indexExists bool) (*httptest.Server, *[]string) {
+	t.Helper()
+	var calls []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/indexes/"):
+			if !indexExists {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(IndexResponse{UID: "products", PrimaryKey: "id"})
+		case strings.HasPrefix(r.URL.Path, "/tasks/"):
+			_ = json.NewEncoder(w).Encode(TaskResult{Status: "succeeded"})
+		default:
+			body, _ := io.ReadAll(r.Body)
+			calls = append(calls, r.Method+" "+r.URL.Path+" "+string(body))
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(TaskResponse{TaskUID: int64(len(calls)), Status: "enqueued"})
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, &calls
+}
+
+func TestReplaceClearsExistingIndexOncePerRun(t *testing.T) {
+	server, calls := recordingServer(t, true)
+
+	sink := New()
+	ctx := context.Background()
+	replace := filament.WritePolicy{Capability: filament.WritePolicyCapability{Mode: filament.WriteReplace}}
+
+	err := sink.Open(ctx, filament.RunSpec{
+		Run:           "run-1",
+		Sink:          filament.Ref{Config: map[string]any{"url": server.URL, "gzip": false}},
+		WritePolicies: map[string]filament.WritePolicy{"products": replace},
+	})
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	schema := rowmodel.Schema{
+		Resource:   "products",
+		PrimaryKey: []string{"id"},
+		Fields:     []rowmodel.Field{{Name: "id", Logical: rowmodel.LogicalInt64}},
+	}
+	for range 2 {
+		if err := sink.EnsureSchema(ctx, "products", schema); err != nil {
+			t.Fatalf("EnsureSchema failed: %v", err)
+		}
+	}
+
+	want := []string{"DELETE /indexes/products/documents "}
+	if strings.Join(*calls, "|") != strings.Join(want, "|") {
+		t.Errorf("calls = %q, want %q", *calls, want)
+	}
+}
+
+func TestMergeSendsDeletesAndUpsertsInOrder(t *testing.T) {
+	server, calls := recordingServer(t, true)
+
+	sink := New()
+	ctx := context.Background()
+	merge := filament.WritePolicy{Capability: filament.WritePolicyCapability{Mode: filament.WriteMerge}}
+
+	err := sink.Open(ctx, filament.RunSpec{
+		Run:           "run-1",
+		Sink:          filament.Ref{Config: map[string]any{"url": server.URL, "gzip": false}},
+		WritePolicies: map[string]filament.WritePolicy{"products": merge},
+	})
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	schema := rowmodel.Schema{
+		Resource:   "products",
+		PrimaryKey: []string{"id"},
+		Fields:     []rowmodel.Field{{Name: "id", Logical: rowmodel.LogicalInt64}},
+	}
+	if err := sink.EnsureSchema(ctx, "products", schema); err != nil {
+		t.Fatalf("EnsureSchema failed: %v", err)
+	}
+
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, arrowbatch.Schema(schema))
+	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 2}, nil)
+	rows := builder.NewRecordBatch()
+	builder.Release()
+
+	b := arrowbatch.NewBatch(rows, arrowbatch.NewOperations([]rowmodel.Operation{
+		rowmodel.OpInsert, rowmodel.OpDelete, rowmodel.OpDelete, rowmodel.OpInsert,
+	}))
+	b.Resource = "products"
+	defer b.Release()
+
+	receipt, err := sink.Apply(ctx, b, filament.ApplyOptions{Policy: merge})
+	if err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if receipt.Rows != 4 {
+		t.Errorf("receipt.Rows = %d, want 4", receipt.Rows)
+	}
+
+	want := []string{
+		"POST /indexes/products/documents {\"id\":1}\n",
+		"POST /indexes/products/documents/delete-batch [\"2\",\"3\"]",
+		"POST /indexes/products/documents {\"id\":2}\n",
+	}
+	if strings.Join(*calls, "|") != strings.Join(want, "|") {
+		t.Errorf("calls = %q, want %q", *calls, want)
 	}
 }
