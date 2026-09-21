@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,9 @@ func (m *Manifest) Normalize() {
 		}
 		if r.Response.Cardinality == "" {
 			r.Response.Cardinality = m.Defaults.Response.Cardinality
+		}
+		if r.Response.PollPending == nil {
+			r.Response.PollPending = m.Defaults.Response.PollPending
 		}
 		if r.Response.Error == nil {
 			r.Response.Error = m.Defaults.Response.Error
@@ -130,6 +134,9 @@ func mergeStringDefaults(defaults, local map[string]string) map[string]string {
 //nolint:gocyclo,funlen // linear sequence of independent field validations
 func (m *Manifest) validateSemantics() error {
 	var agg errs.ManifestErrors
+	if m.Defaults.Response.Empty != nil {
+		_ = agg.Addf("defaults.response.empty", "must be declared on individual resources")
+	}
 
 	if m.Name == "" {
 		_ = agg.Addf("name", "is required")
@@ -255,6 +262,14 @@ func (m *Manifest) validateSemantics() error {
 		if r.Response.Cardinality != "" && r.Response.Cardinality != "many" && r.Response.Cardinality != "one" {
 			_ = agg.Addf(path+".response.cardinality", "must be many or one")
 		}
+		if empty := r.Response.Empty; empty != nil {
+			if empty.Status < 400 || empty.Status > 499 {
+				_ = agg.Addf(path+".response.empty.status", "must be a 4xx status")
+			}
+			if empty.BodyPath == "" || len(empty.BodyEquals) == 0 || slices.Contains(empty.BodyEquals, "") {
+				_ = agg.Addf(path+".response.empty", "requires a body_path and a nonempty array of messages in body_equals")
+			}
+		}
 		if err := checkEnum(r.Pagination.Type, ValidPaginationTypes); err != nil {
 			_ = agg.Addf(path+".pagination.type", "%v", err)
 		}
@@ -324,6 +339,19 @@ func (m *Manifest) validateSemantics() error {
 	}
 	if m.Discovery.Mode == "dynamic" && len(m.Discovery.Include) > 0 {
 		_ = agg.Addf("discovery.include", "is only supported in static mode")
+	}
+	if m.Discovery.Mode != "static" && m.Discovery.DefaultResources != nil {
+		_ = agg.Addf("discovery.default_resources", "is only supported in static mode")
+	}
+	for i, name := range m.Discovery.DefaultResources {
+		path := fmt.Sprintf("discovery.default_resources[%d]", i)
+		if _, ok := names[name]; !ok {
+			_ = agg.Addf(path, "unknown resource %q", name)
+		} else if byName[name].CaptureOnly {
+			_ = agg.Addf(path, "resource %q is capture_only", name)
+		} else if len(m.Discovery.Include) > 0 && !slices.Contains(m.Discovery.Include, name) {
+			_ = agg.Addf(path, "resource %q is not in discovery.include", name)
+		}
 	}
 	for i := range m.Discovery.Resources {
 		path := fmt.Sprintf("discovery[%d]", i)

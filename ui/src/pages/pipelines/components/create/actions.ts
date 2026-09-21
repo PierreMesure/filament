@@ -4,6 +4,11 @@ import type { Resource, ResourceColumn } from "@/gen/ingestion/v1/connectors_pb"
 import type { Pipeline } from "@/gen/ingestion/v1/pipelines_pb";
 
 import type { CreatePipelineModalStep } from "@/pages/pipelines/components/create/types";
+import type { PipelineNodeConfig } from "@/pages/pipelines/components/node/PipelineNodeConfigFields";
+import type {
+  PipelineNotifier,
+  PipelineNotifierState,
+} from "@/pages/pipelines/components/notifier/types";
 import type { PipelineSettingsPageScheduleState } from "@/pages/pipelines/settings/types";
 
 export enum CreatePipelineModalActionType {
@@ -15,9 +20,13 @@ export enum CreatePipelineModalActionType {
   SET_RESOURCE_READ_MODE = "SET_RESOURCE_READ_MODE",
   SET_RESOURCE_CURSOR = "SET_RESOURCE_CURSOR",
   SET_SINK_WRITE_MODE = "SET_SINK_WRITE_MODE",
+  SET_NODE_CONFIG = "SET_NODE_CONFIG",
   SET_NAME = "SET_NAME",
   SET_DESCRIPTION = "SET_DESCRIPTION",
   SET_SCHEDULE = "SET_SCHEDULE",
+  ADD_NOTIFIER = "ADD_NOTIFIER",
+  UPDATE_NOTIFIER = "UPDATE_NOTIFIER",
+  REMOVE_NOTIFIER = "REMOVE_NOTIFIER",
   SET_WORKER_CONFIGURATION = "SET_WORKER_CONFIGURATION",
   GO_TO_STEP = "GO_TO_STEP",
   GO_BACK = "GO_BACK",
@@ -73,6 +82,11 @@ export interface SetSinkWriteModeAction {
   payload: { sinkId: Connection["id"]; writeMode: WriteMode };
 }
 
+export interface SetNodeConfigAction {
+  type: CreatePipelineModalActionType.SET_NODE_CONFIG;
+  payload: { connectionId: Connection["id"]; config: PipelineNodeConfig };
+}
+
 export interface SetNameAction {
   type: CreatePipelineModalActionType.SET_NAME;
   payload: Pipeline["name"];
@@ -86,6 +100,21 @@ export interface SetDescriptionAction {
 export interface SetScheduleAction {
   type: CreatePipelineModalActionType.SET_SCHEDULE;
   payload: Partial<PipelineSettingsPageScheduleState>;
+}
+
+export interface AddNotifierAction {
+  type: CreatePipelineModalActionType.ADD_NOTIFIER;
+  payload: PipelineNotifier;
+}
+
+export interface UpdateNotifierAction {
+  type: CreatePipelineModalActionType.UPDATE_NOTIFIER;
+  payload: { id: PipelineNotifier["id"]; partial: Partial<PipelineNotifierState> };
+}
+
+export interface RemoveNotifierAction {
+  type: CreatePipelineModalActionType.REMOVE_NOTIFIER;
+  payload: PipelineNotifier["id"];
 }
 
 export interface SetWorkerConfigurationAction {
@@ -120,9 +149,13 @@ export type CreatePipelineModalAction =
   | SetResourceReadModeAction
   | SetResourceCursorAction
   | SetSinkWriteModeAction
+  | SetNodeConfigAction
   | SetNameAction
   | SetDescriptionAction
   | SetScheduleAction
+  | AddNotifierAction
+  | UpdateNotifierAction
+  | RemoveNotifierAction
   | SetWorkerConfigurationAction
   | GoToStepAction
   | GoBackAction

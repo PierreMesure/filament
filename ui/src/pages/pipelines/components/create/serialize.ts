@@ -3,6 +3,10 @@ import { create } from "@bufbuild/protobuf";
 import { ConnectorKind, ReadMode, ReplicationMode } from "@/gen/ingestion/v1/common_pb";
 import type { Connection } from "@/gen/ingestion/v1/connections_pb";
 import {
+  type CreatePipelineNotifierRequest,
+  CreatePipelineNotifierRequestSchema,
+} from "@/gen/ingestion/v1/notifiers_pb";
+import {
   type CreatePipelineRequest,
   CreatePipelineRequestSchema,
   type CreatePipelineVersionRequest,
@@ -21,12 +25,16 @@ import type {
   CreatePipelineModalSinkRow,
   CreatePipelineModalState,
 } from "@/pages/pipelines/components/create/types";
+import type { PipelineNodeConfig } from "@/pages/pipelines/components/node/PipelineNodeConfigFields";
+import type { PipelineNotifierState } from "@/pages/pipelines/components/notifier/types";
+import { mapPipelineNotifierStateToInput } from "@/pages/pipelines/components/notifier/utils";
 import { parseWorkerConfiguration } from "@/pages/pipelines/components/worker/utils";
 import { mapPipelineScheduleStateToCron } from "@/pages/pipelines/settings/utils";
 
 const buildNodes = (
   sourceConnection: Connection | null,
   sinks: CreatePipelineModalSinkRow[],
+  nodeConfigs: Record<Connection["id"], PipelineNodeConfig>,
 ): PipelineNode[] => {
   if (!sourceConnection) return [];
   return [
@@ -34,12 +42,14 @@ const buildNodes = (
       id: sourceConnection.id,
       kind: ConnectorKind.SOURCE,
       connectionId: sourceConnection.id,
+      config: nodeConfigs[sourceConnection.id],
     }),
     ...sinks.map((sink) =>
       create(PipelineNodeSchema, {
         id: sink.connection.id,
         kind: ConnectorKind.SINK,
         connectionId: sink.connection.id,
+        config: nodeConfigs[sink.connection.id],
       }),
     ),
   ];
@@ -134,19 +144,21 @@ export const mapCreatePipelineStateToVersionRequest = ({
   sourceConnection,
   rowsBySink,
   sinks,
+  nodeConfigs,
   replication,
   pipelineId,
 }: {
   sourceConnection: Connection | null;
   rowsBySink: Record<Connection["id"], CreatePipelineModalResourceRow[]>;
   sinks: CreatePipelineModalSinkRow[];
+  nodeConfigs: Record<Connection["id"], PipelineNodeConfig>;
   replication: ReplicationMode;
   pipelineId: Pipeline["id"];
 }): CreatePipelineVersionRequest =>
   create(CreatePipelineVersionRequestSchema, {
     pipelineId,
     graph: {
-      nodes: buildNodes(sourceConnection, sinks),
+      nodes: buildNodes(sourceConnection, sinks, nodeConfigs),
       edges: buildEdges({
         sourceConnection,
         rowsBySink,
@@ -171,4 +183,13 @@ export const mapCreatePipelineStateToRequest = (
         }
       : undefined,
     workerConfiguration: parseWorkerConfiguration(state.workerConfiguration).configuration,
+  });
+
+export const mapCreatePipelineNotifierToRequest = (
+  notifier: PipelineNotifierState,
+  pipelineId: Pipeline["id"],
+): CreatePipelineNotifierRequest =>
+  create(CreatePipelineNotifierRequestSchema, {
+    pipelineId,
+    notifier: mapPipelineNotifierStateToInput(notifier),
   });
