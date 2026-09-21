@@ -17,10 +17,8 @@ import (
 	"time"
 )
 
-var (
-	// ErrIndexNotFound is returned when an index does not exist in Meilisearch.
-	ErrIndexNotFound = errors.New("meilisearch: index not found")
-)
+// ErrIndexNotFound is returned when an index does not exist in Meilisearch.
+var ErrIndexNotFound = errors.New("meilisearch: index not found")
 
 // IndexResponse represents the metadata of a Meilisearch index.
 type IndexResponse struct {
@@ -108,7 +106,7 @@ func NewClient(baseURL, apiKey string, gzipEnabled bool) *Client {
 
 // Health checks if the Meilisearch server is running and healthy.
 func (c *Client) Health(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("meilisearch: health request: %w", err)
 	}
@@ -118,7 +116,7 @@ func (c *Client) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("meilisearch: connect to %s: %w", c.baseURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -129,7 +127,7 @@ func (c *Client) Health(ctx context.Context) error {
 
 // GetIndex retrieves metadata for an index by its UID.
 func (c *Client) GetIndex(ctx context.Context, uid string) (*IndexResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/indexes/%s", c.baseURL, url.PathEscape(uid)), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/indexes/%s", c.baseURL, url.PathEscape(uid)), http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +137,7 @@ func (c *Client) GetIndex(ctx context.Context, uid string) (*IndexResponse, erro
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: get index %q: %w", uid, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrIndexNotFound
@@ -178,7 +176,7 @@ func (c *Client) CreateIndex(ctx context.Context, uid, primaryKey string) (*Task
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: create index %q: %w", uid, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// If index already exists (409 Conflict), ignore.
 	if resp.StatusCode == http.StatusConflict {
@@ -199,7 +197,7 @@ func (c *Client) CreateIndex(ctx context.Context, uid, primaryKey string) (*Task
 
 // DeleteAllDocuments deletes all documents from an index while keeping the index and settings.
 func (c *Client) DeleteAllDocuments(ctx context.Context, uid string) (*TaskResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/indexes/%s/documents", c.baseURL, url.PathEscape(uid)), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/indexes/%s/documents", c.baseURL, url.PathEscape(uid)), http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +207,7 @@ func (c *Client) DeleteAllDocuments(ctx context.Context, uid string) (*TaskRespo
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: delete all documents %q: %w", uid, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -255,7 +253,7 @@ func (c *Client) AddDocumentsNDJSON(ctx context.Context, uid, primaryKey string,
 		gz := c.gzipPool.Get().(*gzip.Writer)
 		gz.Reset(buf)
 		if _, err := gz.Write(ndjsonPayload); err != nil {
-			gz.Close()
+			_ = gz.Close()
 			c.gzipPool.Put(gz)
 			return nil, fmt.Errorf("meilisearch: gzip compress: %w", err)
 		}
@@ -285,7 +283,7 @@ func (c *Client) AddDocumentsNDJSON(ctx context.Context, uid, primaryKey string,
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: send documents to %q: %w", uid, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -322,7 +320,7 @@ func (c *Client) DeleteDocumentsBatch(ctx context.Context, uid string, docIDs []
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: delete documents batch %q: %w", uid, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -339,7 +337,7 @@ func (c *Client) DeleteDocumentsBatch(ctx context.Context, uid string, docIDs []
 // GetTask retrieves the current status of an asynchronous task.
 func (c *Client) GetTask(ctx context.Context, taskUID int64) (*TaskResult, error) {
 	endpoint := fmt.Sprintf("%s/tasks/%d", c.baseURL, taskUID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +347,7 @@ func (c *Client) GetTask(ctx context.Context, taskUID int64) (*TaskResult, error
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch: get task %d: %w", taskUID, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
