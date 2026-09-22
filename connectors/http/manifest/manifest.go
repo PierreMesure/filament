@@ -503,13 +503,16 @@ func (p *PaginationSpec) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// paginationTarget defaults bare page and offset parameter names to query targets.
+// paginationTarget defaults bare page and offset parameter names to query
+// targets. Only known injection targets act as prefixes, so a dotted query
+// parameter name like pagination.page passes through verbatim.
 func paginationTarget(field string) (string, string) {
-	target, param, ok := strings.Cut(field, ".")
-	if !ok {
-		return "query", field
+	for _, target := range []string{"query", "body", "header"} {
+		if param, ok := strings.CutPrefix(field, target+"."); ok {
+			return target, param
+		}
 	}
-	return target, param
+	return "query", field
 }
 
 // IncrementalSpec configures watermark-based incremental extraction.

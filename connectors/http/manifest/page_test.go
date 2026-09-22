@@ -33,6 +33,7 @@ resources:
 		valid                bool
 	}{
 		{"page", "limit", "query", true},
+		{"pagination.page", "pagination.size", "query", true},
 		{"query.page", "query.limit", "query", true},
 		{"body.variables.page", "body.variables.limit", "body", true},
 		{"body.page", "query.limit", "", false},

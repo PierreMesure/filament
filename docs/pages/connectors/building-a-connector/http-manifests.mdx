@@ -120,7 +120,9 @@ Choose the pagination style that matches the API:
 - `cursor {response, request: query.X|body.X|header.X, more, null_terminates}`
 - `offset {offset, limit, page_size}` (stops on a short page)
 - `page {number, size, page_size, total_pages, more}`. For JSON bodies, use
-  `body.<path>` for both `number` and `size`.
+  `body.<path>` for both `number` and `size`. Only `query.`, `body.`, and
+  `header.` act as prefixes, so a dotted parameter name like `pagination.page`
+  stays a query parameter as written.
 
 ### Read child endpoints
 
